@@ -24,12 +24,12 @@ Pegasus has a few dependencies:
       # java -version
       openjdk 17.0.14
 
--  **Python 3.6 or higher**. Check with:
+-  **Python 3.10 or higher**. Check with:
 
    ::
 
       # python3 --version
-      Python 3.6.9
+      Python 3.10.1
 
    Python3 package ``yaml`` is also required, but it
    will be installed automatically if you use the RPM/DEB packages.
