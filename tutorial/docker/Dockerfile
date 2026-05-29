@@ -20,7 +20,6 @@ RUN dnf -y install --allowerasing --nobest \
      langpacks-en \
      nano \
      python3-devel \
-     python3-GitPython \
      python3-pika \
      python3-pip \
      python3-cryptography \

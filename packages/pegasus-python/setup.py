@@ -18,8 +18,6 @@ install_requires = [
     # Utils
     # DAX/Workflow
     "PyYAML>5.3",
-    # pegasus-init
-    "GitPython>1.0",
     "pamela>=1.0,<1.1.0",
     "pika>=1.1.0",
     "werkzeug<3.1.0",

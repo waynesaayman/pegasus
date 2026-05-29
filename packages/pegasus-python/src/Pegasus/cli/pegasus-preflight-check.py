@@ -21,14 +21,6 @@ except Exception:
     )
     success = False
 
-try:
-    import git  # noqa
-except Exception:
-    sys.stderr.write("Pegasus requires the Python3 GitPython module to be installed\n")
-    sys.stderr.write(
-        "Please install it via your OS package manager, via pip, or activate a venv which includes the module.\n"
-    )
-    success = False
 
 if not success:
     sys.stderr.write(f"The PYTHONPATH is {sys.path}\n\n")

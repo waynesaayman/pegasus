@@ -1,12 +1,13 @@
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
+import zipfile
 
 import click
-from git import Repo
-from git.exc import GitCommandError
 
 from Pegasus import yaml
 from Pegasus.api import *
@@ -212,9 +213,10 @@ def print_workflows(workflows_available):
 
 
 def clone_workflow(wf_dir, workflow):
-    workflow_source = "https://null:null@github.com/{}/{}.git".format(
+    zip_url = "https://github.com/{}/{}/archive/HEAD.zip".format(
         workflow["organization"], workflow["repo_name"]
     )
+    dest = os.path.join(os.getcwd(), wf_dir, workflow["repo_name"])
 
     click.echo(
         "Fetching workflow from https://github.com/{}/{}.git".format(
@@ -223,15 +225,21 @@ def clone_workflow(wf_dir, workflow):
     )
 
     try:
-        repo = Repo.clone_from(
-            workflow_source, os.path.join(os.getcwd(), wf_dir, workflow["repo_name"]),
-        )
-    except GitCommandError:
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = os.path.join(tmp, "repo.zip")
+            urllib.request.urlretrieve(zip_url, zip_path)
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(tmp)
+            extracted = next(
+                os.path.join(tmp, d)
+                for d in os.listdir(tmp)
+                if os.path.isdir(os.path.join(tmp, d))
+            )
+            shutil.move(extracted, dest)
+    except Exception:
         click.echo("This repository doesn't exist in this location or it's private.")
         click.echo("Exiting...")
         exit()
-
-    return
 
 
 def read_pegasushub_config(wf_dir, workflow):
@@ -428,7 +436,7 @@ Please refer to Pegasus Documentation https://pegasus.isi.edu/documentation/refe
     --transfer-endpoint \"{}\" \\
     --scratch-parent-dir {} \\
     --storage-parent-dir {} \\
-    --remote-scratch-parent-dir {}""".format(
+    """.format(
         wf_sites,
         site.name,
         str(project_name),
@@ -438,8 +446,9 @@ Please refer to Pegasus Documentation https://pegasus.isi.edu/documentation/refe
         transfer_endpoint,
         shared_scratch,
         storage_dir,
-        remote_shared_scratch,
     )
+    if remote_shared_scratch:
+        generate_sites_cmd += f"--remote-scratch-parent-dir {remote_shared_scratch} "
     commands.append(generate_sites_cmd)
 
     create_plan_script(exec_site.exec_site_name, "workflow.yml")

@@ -124,7 +124,6 @@ In order to build Pegasus from source, make sure you have the following installe
 * mysql (optional, required to access MySQL databases)
 * postgresql (optional, required to access PostgreSQL databases)
 * Python pyyaml
-* Python GitPython
 
 Other packages may be required to run unit tests, and build MPI tools.
 
