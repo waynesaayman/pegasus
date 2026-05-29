@@ -21,9 +21,6 @@ import stat
 import sys
 from argparse import ArgumentParser
 
-from six.moves.configparser import ConfigParser
-from six.moves.urllib.parse import urlsplit
-
 from Pegasus.tools.worker_utils import logger
 
 try:
