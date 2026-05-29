@@ -21,6 +21,9 @@ import stat
 import sys
 from argparse import ArgumentParser
 
+from configparser import ConfigParser
+from urllib.parse import urlsplit
+
 from Pegasus.tools.worker_utils import logger
 
 try:
