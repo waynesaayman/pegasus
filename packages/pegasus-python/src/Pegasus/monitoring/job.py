@@ -47,18 +47,18 @@ re_rsl_clean = re.compile(r"([-_])")
 re_site_parse_gvds = re.compile(
     r"^\s*\+(pegasus|wf)_(site|resource)\s*=\s*([\'\"])?(\S+)\3"
 )
-re_parse_transformation = re.compile(r"^\s*\+pegasus_wf_xformation\s*=\s*(\S+)")
-re_parse_derivation = re.compile(r"^\s*\+pegasus_wf_dax_job_id\s*=\s*(\S+)")
-re_parse_multiplier_factor = re.compile(r"^\s*\+pegasus_cores\s=\s(\S+)")
+
+# GH-2180 optional + as expressions are specified as condor submit file
+# variables. e.g. pegasus_queue_expr = '"long" if duration > 0 else "debug"'
+re_parse_pegasus_classads = re.compile(r"^\s*\+?(pegasus_\S+)\s*=\s*(.*)")
+
 re_parse_executable = re.compile(r"^\s*executable\s*=\s*(\S+)")
 re_parse_arguments = re.compile(r'^\s*arguments\s*=\s*"([^"\r\n]*)"')
 re_parse_environment = re.compile(r"^\s*environment\s*=\s*(.*)")
-re_site_parse_euryale = re.compile(r"^\#!\s+site=(\S+)")
 re_parse_property = re.compile(r"([^:= \t]+)\s*[:=]?\s*(.*)")
 re_parse_input = re.compile(r"^\s*intput\s*=\s*(\S+)")
 re_parse_output = re.compile(r"^\s*output\s*=\s*(\S+)")
 re_parse_error = re.compile(r"^\s*error\s*=\s*(\S+)")
-re_parse_job_class = re.compile(r"^\s*\+pegasus_job_class\s*=\s*(\S+)")
 re_parse_pegasuslite_hostname = re.compile(
     r"^.*Executing on host\s*(\S+)(?:\s*IP=(\S+))*.*$", re.MULTILINE
 )
@@ -129,6 +129,13 @@ class Job:
         "11": "dag",
     }
 
+    PEGASUS_CLASSADS_TO_REQUEST_COMPOSITE_KEYS = {
+        "pegasus_cores": "req_cpus",
+        "pegasus_gpus": "req_gpus",
+        "pegasus_memory_mb": "req_memory_mb",
+        "pegasus_diskspace_mb": "req_diskspace_mb",
+    }
+
     # Variables that describe a job, as per the Stampede schema
     # Some will be initialized in the init method, others will
     # get their values from the kickstart output file when a job
@@ -182,6 +189,7 @@ class Job:
         self._stderr_text = None
         self._additional_monitoring_events = []
         self._multipart_events = []
+        self._invocation_events = []
         self._cpu_attribs = None
         self._job_dagman_out = None  # _CONDOR_DAGMAN_LOG from environment
         # line for pegasus-plan and subdax_ jobs
@@ -193,6 +201,7 @@ class Job:
         # was rotated or not, as is the default case.
         self._deferred_job_end_kwargs = None
         self._integrity_metrics = set()
+        self._pegasus_classads = {}
 
     def _get_jobtype_desc(self):
         """
@@ -272,6 +281,49 @@ class Job:
                     self._additional_monitoring_events.append(event)
             else:  # catch all
                 self._additional_monitoring_events.append(event)
+
+    def _extract_job_info_from_pegasus_classads(self, submit_file):
+        """
+        Internal function to populate job variables from the pegasus classds in the submit files
+        :param submit_file: the job submit file
+        :return:
+        """
+
+        if "pegasus_wf_xformation" in self._pegasus_classads:
+            my_transformation = self._pegasus_classads["pegasus_wf_xformation"]
+            # Remove quotes, if any
+            my_transformation = my_transformation.strip('"')
+            self._main_job_transformation = my_transformation
+
+        if "pegasus_wf_dax_job_id" in self._pegasus_classads:
+            my_derivation = self._pegasus_classads["pegasus_wf_dax_job_id"]
+            # Remove quotes, if any
+            my_derivation = my_derivation.strip('"')
+            if my_derivation == "null":
+                # If derivation is the "null" string, we don't want to take it
+                self._main_job_derivation = None
+            else:
+                self._main_job_derivation = my_derivation
+
+        if "pegasus_cores" in self._pegasus_classads:
+            # Found line with multiplier_factor
+            try:
+                my_multiplier_factor = self._pegasus_classads["pegasus_cores"]
+                self._main_job_multiplier_factor = int(my_multiplier_factor)
+            except ValueError:
+                logger.warning(
+                    "%s: cannot convert multiplier factor: %s"
+                    % (os.path.basename(submit_file), my_multiplier_factor)
+                )
+                self._main_job_multiplier_factor = None
+
+        if "pegasus_job_class" in self._pegasus_classads:
+            self._job_type = self._pegasus_classads["pegasus_job_class"]
+
+        if "pegasus_site" in self._pegasus_classads:
+            self._site_name = self._pegasus_classads["pegasus_site"].strip('"')
+
+        return
 
     def add_integrity_metric(self, metric):
         """
@@ -379,6 +431,15 @@ class Job:
 
         # Parse submit file
         for my_line in SUB:
+
+            # general look for pegasus classads first
+            match = re_parse_pegasus_classads.search(my_line)
+            if match:
+                key = match.group(1)
+                value = match.group(2)
+                self._pegasus_classads[key] = value
+                continue
+
             if re_rsl_string.search(my_line):
                 # Found RSL string, do parse now
                 for my_match in re.findall(r"\(([^)]+)\)", my_line):
@@ -391,30 +452,6 @@ class Job:
                             my_result = int(my_v)
                         except ValueError:
                             my_result = None
-            elif re_site_parse_gvds.search(my_line):
-                # GVDS agreement
-                my_site = re_site_parse_gvds.search(my_line).group(4)
-                self._site_name = my_site
-            elif re_site_parse_euryale.search(my_line):
-                # Euryale specific comment
-                my_site = re_site_parse_euryale.search(my_line).group(1)
-                self._site_name = my_site
-            elif re_parse_transformation.search(my_line):
-                # Found line with job transformation
-                my_transformation = re_parse_transformation.search(my_line).group(1)
-                # Remove quotes, if any
-                my_transformation = my_transformation.strip('"')
-                self._main_job_transformation = my_transformation
-            elif re_parse_derivation.search(my_line):
-                # Found line with job derivation
-                my_derivation = re_parse_derivation.search(my_line).group(1)
-                # Remove quotes, if any
-                my_derivation = my_derivation.strip('"')
-                if my_derivation == "null":
-                    # If derivation is the "null" string, we don't want to take it
-                    self._main_job_derivation = None
-                else:
-                    self._main_job_derivation = my_derivation
             elif re_parse_executable.search(my_line):
                 # Found line with executable
                 my_executable = re_parse_executable.search(my_line).group(1)
@@ -427,19 +464,6 @@ class Job:
                 # Remove quotes, if any
                 my_arguments = my_arguments.strip('"')
                 self._main_job_arguments = my_arguments
-            elif re_parse_multiplier_factor.search(my_line):
-                # Found line with multiplier_factor
-                my_multiplier_factor = re_parse_multiplier_factor.search(my_line).group(
-                    1
-                )
-                try:
-                    self._main_job_multiplier_factor = int(my_multiplier_factor)
-                except ValueError:
-                    logger.warning(
-                        "%s: cannot convert multiplier factor: %s"
-                        % (os.path.basename(submit_file), my_multiplier_factor)
-                    )
-                    self._main_job_multiplier_factor = None
             elif re_parse_input.search(my_line):
                 # Found line with input file
                 my_input = re_parse_input.search(my_line).group(1)
@@ -465,9 +489,12 @@ class Job:
                         "Unable to parse dagman out file from environment key %s in submit file for job %s"
                         % (my_line, self._exec_job_id)
                     )
-            elif re_parse_job_class.search(my_line):
-                self._job_type = re_parse_job_class.search(my_line).group(1)
+
         SUB.close()
+
+        # set values from pegasus classads that we need
+        self._extract_job_info_from_pegasus_classads(submit_file)
+        my_site = self._site_name
 
         # All done!
         return my_result, my_site
@@ -651,8 +678,11 @@ class Job:
                         )
 
             # PM-1398 pass cpu info
-            if "cpu" in my_record:
-                self._cpu_attribs = my_record["cpu"]
+            self._add_cpu_attributes(my_record)
+
+            # GH-2149 we want to send invocation records as part of composite events
+            if "invocation" in my_record:
+                self._add_invocation_event(my_record)
 
         if len(stdout_text_list) > 0:
             self._stdout_text = "".join(stdout_text_list)
@@ -897,6 +927,26 @@ class Job:
 
         return TaskOutput(task_data.getvalue(), events)
 
+    def _add_invocation_event(self, invocation_record):
+        # explicitly null out events that are not required to reduce confusion
+        my_record = {}
+
+        for key in [
+            "transformation",
+            "exitcode",
+            "duration",
+            "user",
+            "hostname",
+            "hostaddr",
+            "maxrss",
+            "tot_ip_size_mb",
+            "tot_op_size_mb",
+        ]:
+            if key in invocation_record:
+                my_record[key] = invocation_record[key]
+
+        self._invocation_events.append(my_record)
+
     def create_composite_job_event(self, job_inst_kwargs):
         """
         this creates a composite job event that also includes all information included in a job_inst.end event
@@ -927,6 +977,15 @@ class Job:
         if self._cpu_attribs:
             for key in self._cpu_attribs:
                 kwargs[key] = self._cpu_attribs[key]
+
+        # GH-2171 encode pegasus resource classads as
+        # corresponding req_ keys
+        if self._pegasus_classads:
+            for key in self._pegasus_classads.keys():
+                if key in self.PEGASUS_CLASSADS_TO_REQUEST_COMPOSITE_KEYS:
+                    kwargs[
+                        self.PEGASUS_CLASSADS_TO_REQUEST_COMPOSITE_KEYS[key]
+                    ] = self._pegasus_classads[key]
 
         # PM-1398 for DIBBS we want task monitoring event that has metadata
         # to be included in the composite event also
@@ -993,10 +1052,67 @@ class Job:
                         % (key, self._exec_job_id)
                     )
                     existing = kwargs[key]
+
+                    if isinstance(existing, dict):
+                        if key != "location":
+                            # in case of aws batch for clustered jobs there are multiple location records
+                            # generated. We only pick the first one. For other records if there is a dict
+                            # and we detect multiple of them for the job, we should log an error
+                            logger.error(
+                                "key %s exists as a dict and not a list. Ignoring for job %s"
+                                % (key, self._exec_job_id)
+                            )
+                        continue
+
                     for subevent in event[key]:
                         # print(subevent) only print for debugging. too verbose for debug too
                         existing.append(subevent)
                 else:
                     kwargs[key] = event[key]
 
+        kwargs["invocations"] = []
+        for invocation in self._invocation_events:
+            kwargs["invocations"].append(invocation)
+
         return kwargs
+
+    def get_pegasus_classads(self):
+        """
+        Returns pegasus classads retrieved by parsing the submit file.
+        :return:
+        """
+        return self._pegasus_classads
+
+    def _add_cpu_attributes(self, invocation_record):
+
+        # PM-1398 pass cpu info
+        if "cpu" in invocation_record:
+            # this is how it appears in the old xml formatted kickstart records
+            self._cpu_attribs = invocation_record["cpu"]
+            return
+
+        # for GH-2150 handle for 5.0 yaml formatted records
+        """
+        cpu_count: 24
+        cpu_speed: 3300
+        cpu_vendor: GenuineIntel
+        cpu_name: Intel(R) Xeon(R) W-3235 CPU @ 3.30GHz
+        """
+        if self._cpu_attribs is None:
+            self._cpu_attribs = {}
+            for key in ["cpu_count", "cpu_speed", "cpu_vendor", "cpu_model"]:
+                if key in invocation_record:
+                    self._cpu_attribs[key] = invocation_record[key]
+
+            # GH-2150 GH-2149 also add other machine attributes that we need.
+            # they are populated once only for clustered job
+            """
+            map from kickstart parser
+            [["machine", "ram_total"], ["ram"]],
+            ["machine", "uname_system"], ["system"]],
+            [["machine", "uname_release"], ["release"]],
+            [["machine", "uname_machine"], ["machine"]],
+            """
+            for key in ["ram", "system", "release", "machine"]:
+                if key in invocation_record:
+                    self._cpu_attribs[key] = invocation_record[key]

@@ -16,8 +16,8 @@ stages:
 - build
 - deploy
 - release
-- performance-tests
 - e2e-tests
+- performance-tests
 
 
 pre-job:
@@ -312,8 +312,8 @@ Ubuntu:
       - x86_64
       - arm64
       OS:
-      - ubuntu_22
       - ubuntu_24
+      - ubuntu_26
   image: pegasus/buildenv:${OS}
   script:
   - ant dist-worker dist-release dist-deb
@@ -401,15 +401,19 @@ Tutorial Container:
   - docker build --no-cache --build-arg CACHEBUST=$(date +"%Y%m%d%H%M%S") --build-arg PEGASUS_VERSION=${PEGASUS_VERSION} --tag pegasus/tutorial:${PEGASUS_VERSION} --progress plain .
   - docker push pegasus/tutorial:${PEGASUS_VERSION}
   - docker rmi --force pegasus/tutorial:${PEGASUS_VERSION}
+  rules:
+  - if: $CI_PIPELINE_NAME != 'workflow'
   dependencies:
   - pre-job
-  - "RHEL: [x86_64, rhel_8]"
+  - "RHEL: [x86_64, rhel_9]"
   needs:
   - pre-job
-  - "RHEL: [x86_64, rhel_8]"
+  - "RHEL: [x86_64, rhel_9]"
   tags:
   - x86_64
   - docker-cli
+  timeout: 45 minutes
+
 
 # Release
 
@@ -511,7 +515,6 @@ Workflow Tests:
       - 004-montage-staging-site
       - 004-montage-universe-local
       - 004-montage-apptainer
-      #- 005-galactic-plane
       - 007-black-diamond-pegasuslite-local
       - 007-black-diamond-pegasuslite-local-bypass
       - 008-black-diamond-pegasuslite-condorio
@@ -596,12 +599,14 @@ Workflow Tests:
       - 047-cwl-docker-black-diamond
       - 048-black-deep-condorio
       - 048-black-deep-condorio-local
-      - 048-ligo-getenv
       - 049-pycbc-search
       - 050-singularity-container-universe nonsharedfs
       - 050-singularity-container-universe nonsharedfs-shared
       - 050-singularity-container-universe nonsharedfs-symlink
       - 050-singularity-container-universe condorio
+      - 051-osdf nonsharedfs/bypass
+      - 051-osdf condorio/bypass
+      - 052-request memory	
       - blackdiamond pl-condorio
       - blackdiamond pl-condorio-local
       - blackdiamond pl-pt
@@ -616,8 +621,6 @@ Workflow Tests:
   - tar xzf pegasus-binary-*-x86_64*.tar.gz
   - cd ..
   - export PATH=$PWD/dist/pegasus-${PEGASUS_VERSION}/bin:${PATH}
-  - export CLASSPATH=".:`pegasus-config --classpath`"
-  - export PYTHONPATH="`pegasus-config --python`"
   - ./test/scripts/${EXEC} ${TESTNAME}
   rules:
   - if: $CI_PIPELINE_NAME == 'workflow'
@@ -652,8 +655,6 @@ Performance Tests:
   - tar xzf pegasus-binary-*-x86_64*.tar.gz
   - cd ..
   - export PATH=$PWD/dist/pegasus-${PEGASUS_VERSION}/bin:${PATH}
-  - export CLASSPATH=".:`pegasus-config --classpath`"
-  - export PYTHONPATH="`pegasus-config --python`"
   - ./test/scripts/${EXEC} ${TESTNAME}
   rules:
   - if: $CI_PIPELINE_NAME == 'workflow'

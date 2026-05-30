@@ -303,7 +303,7 @@ public class PegasusLite implements GridStart {
         mEnablingPartOfAggregatedJob = false;
         mDefaultGridStartImplementation = new Kickstart();
         mDefaultGridStartImplementation.initialize(bag, dag);
-        // for pegasus lite we dont want ot use the full path, unless
+        // for pegasus lite we dont want to use the full path, unless
         // a user has specifically catalogued in the transformation catalog
         mDefaultGridStartImplementation.useFullPathToGridStarts(false);
 
@@ -575,6 +575,8 @@ public class PegasusLite implements GridStart {
 
             StringBuilder args = new StringBuilder();
             args.append(PegasusExitCode.POSTSCRIPT_ARGUMENTS_FOR_PASSING_DAGMAN_JOB_EXITCODE);
+            args.append(" ");
+            args.append(PegasusExitCode.POSTSCRIPT_ARGUMENTS_FOR_PASSING_DAGMAN_JOB_RETRY);
             // PM-1821 explicity indicate no kickstart records to parse
             args.append(" ")
                     .append(
@@ -914,7 +916,8 @@ public class PegasusLite implements GridStart {
                                 sls.getSLSInputLFN(job),
                                 stagingSiteServerForRetrieval,
                                 stagingSiteDirectory,
-                                workerNodeDir);
+                                workerNodeDir,
+                                true);
 
                 // PM-779 split the checkpoint files and container from the input files
                 // as we want to stage them separately
@@ -939,7 +942,9 @@ public class PegasusLite implements GridStart {
                 }
                 // end of PM-1608 not sure why this is not handled in wrapper
             }
-            if (this.mDoIntegrityChecking) {
+            if (this.mDoIntegrityChecking && job.getJobType() != Job.CLEANUP_JOB) {
+                // GH-2137 make sure that the cleanup job that is removing a container
+                // does not have to do integrity checking on that container file.
                 Collection<PegasusFile> containerFilesToCheck = new LinkedList();
                 for (PegasusFile file : job.getInputFiles()) {
                     if (file.isContainerFile()) {
@@ -1251,29 +1256,47 @@ public class PegasusLite implements GridStart {
     /**
      * Associates a setup script with the job so that it can be invoked from within PegasusLite.
      *
+     * <p>The following preference order is followed
+     *
+     * <pre>
+     *   1. highest priority is pegasus profile associated with the job
+     *      can come from the site where the job runs or the TC
+     *   2. second priority is the value of pegasus profile
+     *      on the submit host.
+     *   3. if above two are not set, then env profile on the compute site .
+     * </pre>
+     *
      * @param job the job
      * @return boolean indicating whether a setup script was associated with the job or not.
      */
     public boolean associateSetupScriptWithJob(Job job) {
-        String key = ENV.PEGASUS_LITE_ENV_SOURCE_KEY;
+        String envKey = ENV.PEGASUS_LITE_ENV_SOURCE_KEY;
+        String pegasusKey = Pegasus.PEGASUS_LITE_ENV_SOURCE_KEY;
+
         boolean result = false;
-        // we prefer env profile over pegasus profile
-        String setupFile = (String) job.envVariables.get(key);
-        if (setupFile == null) {
-            // check if the key is specified as a pegasus profile
-            setupFile = mSetupScriptOnTheSubmitHost;
-            if (setupFile != null) {
-                // in case a pegasus profile is specified, then it means
-                // the script needs to be transferred using Condor File IO
-                job.condorVariables.addIPFileForTransfer(setupFile);
-                setupFile = "." + File.separator + new File(setupFile).getName();
-            }
+
+        // 1. highest priority is pegasus profile associated with the job
+        //    can come from the site where the job runs or the TC
+        // 2. second priority is the value of pegasus profile
+        //    on the submit host.
+        String setupFile = job.vdsNS.getStringValue(pegasusKey);
+        setupFile = (setupFile == null) ? mSetupScriptOnTheSubmitHost : setupFile;
+
+        if (setupFile != null) {
+            // in case a pegasus profile is specified, then it means
+            // the script needs to be transferred using Condor File IO
+            job.condorVariables.addIPFileForTransfer(setupFile);
+            setupFile = "." + File.separator + new File(setupFile).getName();
         }
+
+        // 3. the env profile on the compute site has lowest priority
+        setupFile = (setupFile == null) ? (String) job.envVariables.get(envKey) : setupFile;
+
         if (setupFile != null) {
             // set the environment variable in the job env.
             // value can be absolute(if picked from env profile)
             // or just the basename (if picked from pegasus profile)
-            job.envVariables.construct(key, setupFile);
+            job.envVariables.construct(envKey, setupFile);
             result = true;
         }
         return result;
@@ -1386,7 +1409,7 @@ public class PegasusLite implements GridStart {
         if (propValue != null && propValue.equals("PegasusLite.None")) {
             gs = new NoGridStart();
             gs.initialize(mBag, mDAG);
-            // for pegasus lite we dont want ot use the full path, unless
+            // for pegasus lite we dont want to use the full path, unless
             // a user has specifically catalogued in the transformation catalog
             gs.useFullPathToGridStarts(false);
         }

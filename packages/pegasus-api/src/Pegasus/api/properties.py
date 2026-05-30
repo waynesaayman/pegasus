@@ -2,6 +2,7 @@ import logging
 import re
 from configparser import DEFAULTSECT, ConfigParser
 from io import StringIO
+from pathlib import Path
 from typing import Optional, TextIO, Union
 
 __all__ = ["Properties"]
@@ -69,6 +70,8 @@ class Properties:
         "pegasus.catalog.replica.dax.asrc",
         "pegasus.catalog.site",
         "pegasus.catalog.site.file",
+        "pegasus.catalog.site.repo.file",
+        "pegasus.catalog.site.repo.interval",
         "pegasus.catalog.transformation",
         "pegasus.catalog.transformation.file",
         "pegasus.selector.replica",
@@ -246,7 +249,7 @@ class Properties:
         :type prop: Optional[str]
         """
         if prop:
-            to_print = list()
+            to_print = []
             for p in Properties._props:
                 if prop in p:
                     to_print.append(p)
@@ -257,12 +260,14 @@ class Properties:
             print(*sorted(Properties._props), sep="\n")
 
     def __init__(self):
+        """Initialize an empty :class:`Properties` instance with a case-preserving config parser."""
         self._conf = ConfigParser()
         # preserve case for keys
         self._conf.optionxform = str
         self._conf[DEFAULTSECT] = {}
 
     def __setitem__(self, k, v):
+        """Set property ``k`` to ``v``, logging a warning if ``k`` is not a recognized Pegasus property key."""
         self._conf[DEFAULTSECT][k] = self._escape(v)
 
         if not self._check_key(k):
@@ -273,14 +278,22 @@ class Properties:
             )
 
     def __getitem__(self, k):
+        """Return the value of property ``k``."""
         return self._conf[DEFAULTSECT][k]
 
     def __delitem__(self, k):
+        """Delete property ``k``."""
         self._conf.remove_option(DEFAULTSECT, k)
 
     @classmethod
     def _check_key(cls, k) -> bool:
-        """Check if the key :code:`k` is a valid Pegasus property."""
+        """Check if the key :code:`k` is a valid Pegasus property.
+
+        :param k: property key to check
+        :type k: str
+        :return: True if ``k`` is a known property key, False otherwise
+        :rtype: bool
+        """
         rv = False
         if k in cls._props:
             rv = True
@@ -301,7 +314,12 @@ class Properties:
 
     @staticmethod
     def _escape(v):
-        """Escape value :code:`v`."""
+        """Convert value ``v`` to a string suitable for the properties file.
+
+        :param v: value to convert
+        :return: string representation of ``v``
+        :rtype: str
+        """
         if isinstance(v, str):
             return v
         else:
@@ -309,6 +327,15 @@ class Properties:
 
     @staticmethod
     def _get_site_profile_key(site, namespace, key):
+        """Build the property key for overriding a site catalog profile.
+
+        :param site: site name
+        :param namespace: profile namespace (e.g. ``"pegasus"``)
+        :param key: profile key
+        :return: fully qualified property key string
+        :rtype: str
+        :raises ValueError: if any of site, namespace, or key is None
+        """
         if site is None:
             raise ValueError("Site cannot be none")
 
@@ -323,20 +350,21 @@ class Properties:
         )
 
     def add_site_profile(self, site, namespace, key, value):
-        """
-        Maps a site profile to a property that can be picked up by the planner, to
-        override site catalog entries loaded from the Site Catalog.
+        """Map a site profile to a property so the planner can override site catalog entries.
 
-        :param site:  the site
-        :param namespace: the namespace for which profile has to be added
-        :param key:   the profile key
+        :param site: the site name
+        :type site: str
+        :param namespace: the profile namespace (e.g. ``"pegasus"``, ``"condor"``)
+        :type namespace: str
+        :param key: the profile key
+        :type key: str
         :param value: the profile value
-        :return:
+        :raises ValueError: if any of site, namespace, or key is None
         """
 
         self.__setitem__(self._get_site_profile_key(site, namespace, key), value)
 
-    def write(self, file: Optional[Union[str, TextIO]] = None):
+    def write(self, file: Optional[Union[str, Path, TextIO]] = None):
         """Write these properties to a file. If :code:`file` is not given, these
         properties are written to :code:`./pegasus.properties`
 
@@ -350,7 +378,7 @@ class Properties:
                 props.write(f)
 
         :param file: file path or file object where properties will be written to, defaults to None
-        :type file: Optional[Union[str, TextIO]]
+        :type file: Optional[Union[str, Path, TextIO]]
         :raises TypeError: file must be of type str or file like object
         """
         with StringIO() as sio:
@@ -363,7 +391,7 @@ class Properties:
         if file is None:
             file = "pegasus.properties"
 
-        if isinstance(file, str):
+        if isinstance(file, (str, Path)):
             with open(file, "w") as f:
                 f.write(props)
         elif hasattr(file, "read"):

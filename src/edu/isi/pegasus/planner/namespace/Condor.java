@@ -13,6 +13,7 @@
  */
 package edu.isi.pegasus.planner.namespace;
 
+import edu.isi.pegasus.common.util.UnitConverter;
 import edu.isi.pegasus.planner.catalog.classes.Profiles;
 import edu.isi.pegasus.planner.classes.Profile;
 import edu.isi.pegasus.planner.common.PegasusProperties;
@@ -157,8 +158,11 @@ public class Condor extends Namespace {
     /** The Condor Key designating the numnber of cpu's to request. */
     public static final String REQUEST_CPUS_KEY = "request_cpus";
 
-    /** The Condor Key designating the numnber of cpu's to request. */
+    /** The Condor Key designating the numnber of gpu's to request. */
     public static final String REQUEST_GPUS_KEY = "request_gpus";
+
+    /** The Condor Key designating the what tpye of cpu's to request. */
+    public static final String REQUIRE_GPUS_KEY = "require_gpus";
 
     /** The Condor Key designating the amount of memory to request. */
     public static final String REQUEST_MEMORY_KEY = "request_memory";
@@ -206,6 +210,36 @@ public class Condor extends Namespace {
 
     /** the workflow submit directory key** */
     public static final String WF_SUBMIT_DIR_KEY = "wf_submit_dir";
+
+    /**
+     * the env variable that Condor sets in the job environment to indicate what directory the job
+     * executable is launched in at runtime
+     */
+    public static final String CONDOR_SCRATCH_DIR_ENV_VARIABLE = "_CONDOR_SCRATCH_DIR";
+
+    /**
+     * Expand back the workflow submit dir from the path.
+     *
+     * @param path
+     * @param classAdKey
+     * @param value the value to substitute
+     * @return
+     */
+    public static String expandFilePath(String path, String classAdKey, String value) {
+        StringBuilder result = new StringBuilder();
+        String key = "$(" + classAdKey + ")";
+        int index = path.indexOf(key);
+        if (index < 0) {
+            return path;
+        }
+        // should be empty string only
+        // for e.g. $(wf_submit_dir)/pegasus-worker-5.1.2-dev.0-x86_64_rhel_8.tar.gz
+        result.append(path.substring(0, index));
+        result.append(value);
+        result.append(path.substring(index + key.length()));
+
+        return result.toString();
+    }
 
     /**
      * The name of the implementing namespace. It should be one of the valid namespaces always.
@@ -725,6 +759,7 @@ public class Condor extends Namespace {
                     res = VALID_KEY;
                 } else if (key.compareTo(Condor.REQUEST_CPUS_KEY) == 0
                         || key.compareTo(Condor.REQUEST_GPUS_KEY) == 0
+                        || key.compareTo(Condor.REQUIRE_GPUS_KEY) == 0
                         || key.compareTo(Condor.REQUEST_MEMORY_KEY) == 0
                         || key.compareTo(Condor.REQUEST_DISK_KEY) == 0) {
                     res = VALID_KEY;
@@ -862,6 +897,25 @@ public class Condor extends Namespace {
                     key = REQUIREMENTS_KEY;
                     // construct the classad expression
                     value = FILE_SYSTEM_DOMAIN_KEY + " == " + "\"" + value + "\"";
+                } else if (key.equalsIgnoreCase(Condor.REQUEST_MEMORY_KEY)) {
+                    // GH-2178 convert to MB if possible taking into account the units passed
+                    long converted = UnitConverter.toMB(value);
+                    if (converted >= 0) {
+                        value = Long.toString(converted);
+                    }
+                } else if (key.equalsIgnoreCase(Condor.REQUEST_DISK_KEY)) {
+                    // GH-2178 convert to KB if possible taking into account the units passed
+                    char lastChar = value.charAt(value.length() - 1);
+                    if (Character.isDigit(lastChar)) {
+                        // explicitly add the unit to KB as
+                        // UnitConverter conversion base is MB
+                        value += " KB";
+                    }
+
+                    long converted = UnitConverter.toKB(value);
+                    if (converted >= 0) {
+                        value = Long.toString(converted);
+                    }
                 }
                 construct(key, value);
                 break;

@@ -13,6 +13,8 @@
  */
 package edu.isi.pegasus.planner.common;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import edu.isi.pegasus.common.logging.LogManager;
@@ -25,6 +27,8 @@ import java.io.IOException;
 import java.util.LinkedList;
 import java.util.Map;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Test class to test the Pegasus Properties class
@@ -74,16 +78,42 @@ public class PegasusPropertiesTest {
                 "pegasus.catalog.site.sites." + site + ".profiles.condor." + key, value);
 
         Profiles p = properties.getSiteProfiles(site);
-        assertNotNull(p);
+        assertThat(p, notNullValue());
         for (Profiles.NAMESPACES ns : Profiles.NAMESPACES.values()) {
             Namespace n = p.get(ns);
             if (ns.toString().equals("condor")) {
-                assertEquals(1, n.size(), "Namspace should be of size");
-                assertEquals(value, n.get(key), "Value of key " + key);
+                assertThat(n.size(), is(1));
+                assertThat(n.get(key), is(value));
             } else {
-                assertTrue(n.isEmpty(), "Namepsace " + n.namespaceName() + " should be empty");
+                assertThat(n.isEmpty(), is(true));
             }
         }
+        mLogger.logEventCompletion();
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            value = {
+                "-50, 500", // default value
+                "10, 10",
+                "null, 500", // default value
+                "3000, 2047"
+            },
+            nullValues = {"null"})
+    public void testMaxSupportedYAMLDocSize(String input, String expected) {
+        mLogger.logEventStart(
+                "test.planner.common.PegasusProperties", "set", Integer.toString(mTestNumber++));
+
+        PegasusProperties properties = PegasusProperties.nonSingletonInstance();
+        if (input != null) {
+            properties.setProperty("pegasus.parser.document.size", input);
+        }
+
+        String value = Integer.toString(properties.getMaxSupportedYAMLDocSize());
+
+        assertThat(value, notNullValue());
+        assertThat(value, is(expected));
+
         mLogger.logEventCompletion();
     }
 }

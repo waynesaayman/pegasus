@@ -1,11 +1,11 @@
-FROM rockylinux:8
+FROM rockylinux:9
 
 RUN groupadd --gid 808 scitech-group
 RUN useradd --gid 808 --uid 550 --create-home --password '$6$ouJkMasm5X8E4Aye$QTFH2cHk4b8/TmzAcCxbTz7Y84xyNFs.gqm/HWEykdngmOgELums1qOi3e6r8Z.j7GEA9bObS/2pTN1WArGNf0' scitech
 
 RUN dnf -y update && \
     dnf -y install 'dnf-command(config-manager)' && \
-    dnf -y config-manager --set-enabled powertools && \
+    dnf -y config-manager --set-enabled devel && \
     dnf -y config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo && \
     dnf -y install epel-release
 
@@ -43,12 +43,12 @@ RUN python3 -m pip install 'setuptools_scm>=6'
 RUN python3 -m pip install jupyter
 
 # Locale and timezone
-ENV LANG en_US.UTF-8
+ENV LANG=en_US.UTF-8
 RUN cp /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
 
 # HTCondor
-RUN dnf -y install https://research.cs.wisc.edu/htcondor/repo/24.x/htcondor-release-current.el8.noarch.rpm && \
-    dnf -y install condor minicondor && \
+RUN dnf -y install https://htcss-downloads.chtc.wisc.edu/repo/25.x/htcondor-release-current.el9.noarch.rpm && \
+    dnf -y install --enablerepo crb condor minicondor && \
     sed -i 's/condor@/scitech@/g' /etc/condor/config.d/00-minicondor
 
 RUN usermod -a -G condor scitech
@@ -84,10 +84,6 @@ RUN pegasus-db-admin create
 # Set Kernel for Jupyter (exposes PATH and PYTHONPATH for use when terminal from jupyter is used)
 ADD ./config/kernel.json /usr/local/share/jupyter/kernels/python3/kernel.json
 RUN echo -e "export PATH=/home/scitech/.pyenv/bin:\$PATH:/usr/lib64/mpich/bin" >> /home/scitech/.bashrc
-
-# Set notebook password to 'scitech'. This pw will be used instead of token authentication
-RUN mkdir /home/scitech/.jupyter \
-    && echo "{ \"NotebookApp\": { \"password\": \"sha1:30a323540baa:6eec8eaf3b4e0f44f2f2aa7b504f80d5bf0ad745\" } }" >> /home/scitech/.jupyter/jupyter_notebook_config.json
 
 USER root
 CMD ["/start.sh"]

@@ -14,6 +14,13 @@ from optparse import OptionParser
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+# PEGASUS_PYTHONPATH is set by the pegasus-python-wrapper script
+peg_path = os.environ.get("PEGASUS_PYTHONPATH")
+if peg_path:
+    for p in reversed(peg_path.split(":")):
+        if p not in sys.path:
+            sys.path.insert(0, p)
+
 from Pegasus import yaml
 
 COLORS = [
@@ -297,7 +304,7 @@ def parse_xform_name(path):
         f = open(path)
         for line in f.readlines():
             if "+pegasus_wf_xformation" in line:
-                return line.split('"')[1]
+                return line.split("'")[1]
 
     # Otherwise, guess the xform by stripping digits from the name
     name = fname.replace(".sub", "")

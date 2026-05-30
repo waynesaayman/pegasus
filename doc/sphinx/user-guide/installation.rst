@@ -111,17 +111,17 @@ Ubuntu
 
 .. tabs::
 
+   .. code-tab:: bash 26.04 LTS (Resolute Raccoon)
+
+      curl https://download.pegasus.isi.edu/pegasus/gpg.txt | apt-key add -
+      echo 'deb https://download.pegasus.isi.edu/pegasus/ubuntu resolute main' >/etc/apt/sources.list.d/pegasus.list
+      apt-get update
+      apt-get install pegasus
+
    .. code-tab:: bash 24.04 LTS (Noble Numbat)
 
       curl https://download.pegasus.isi.edu/pegasus/gpg.txt | apt-key add -
       echo 'deb https://download.pegasus.isi.edu/pegasus/ubuntu noble main' >/etc/apt/sources.list.d/pegasus.list
-      apt-get update
-      apt-get install pegasus
-
-   .. code-tab:: bash 22.04 LTS (Jammy Jellyfish)
-
-      curl https://download.pegasus.isi.edu/pegasus/gpg.txt | apt-key add -
-      echo 'deb https://download.pegasus.isi.edu/pegasus/ubuntu jammy main' >/etc/apt/sources.list.d/pegasus.list
       apt-get update
       apt-get install pegasus
 
@@ -145,14 +145,6 @@ Debian
       apt-get update
       apt-get install pegasus
 
-   .. code-tab:: bash Debian 11 (Bullseye)
-
-      wget -O - https://download.pegasus.isi.edu/pegasus/gpg.txt | apt-key add -
-      echo 'deb https://download.pegasus.isi.edu/pegasus/debian bullseye main' >/etc/apt/sources.list.d/pegasus.list
-      apt-get update
-      apt-get install pegasus
-
-
 
 .. _macosx:
 
@@ -175,7 +167,6 @@ service. The easiest way to do that is to use the Homebrew services tap:
 
 ::
 
-   $ brew tap homebrew/services
    $ brew services list
    $ brew services start htcondor
 
@@ -251,7 +242,7 @@ If you need to mix a Pegasus install with other environments, such as using
 the Pegasus command line tools from a system install, but use the Python
 install and libraries from Conda, you can tell Pegasus to leave the
 environment alone. Note that by doing this, you will need to supply the
-requirements in your own environment. Set the environemnt variable:
+requirements in your own environment. Set the environment variable:
 
    ::
 

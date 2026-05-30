@@ -25,6 +25,7 @@ import edu.isi.pegasus.planner.catalog.transformation.TransformationCatalogEntry
 import edu.isi.pegasus.planner.catalog.transformation.classes.TCType;
 import edu.isi.pegasus.planner.classes.ADag;
 import edu.isi.pegasus.planner.classes.AggregatedJob;
+import edu.isi.pegasus.planner.classes.DAXJob;
 import edu.isi.pegasus.planner.classes.Job;
 import edu.isi.pegasus.planner.classes.PegasusBag;
 import edu.isi.pegasus.planner.classes.PegasusFile;
@@ -187,6 +188,10 @@ public class Kickstart implements GridStart {
 
     private Integrity mIntegrityHandler;
 
+    /** The default value of whether to enable stating of files or not */
+    // GH-2155 set to true as we want to report file sizes in composite events
+    private final boolean DEFAULT_ENABLE_KICKSTART_STAT_OF_FILES = true;
+
     /**
      * Initializes the GridStart implementation.
      *
@@ -234,10 +239,10 @@ public class Kickstart implements GridStart {
         mDisableKickstartStatCompletely = false;
         if (value == null) {
             // stat is disabled unless there is registration job
-            mDoStat = false;
+            mDoStat = DEFAULT_ENABLE_KICKSTART_STAT_OF_FILES;
         } else {
             // user specified a stat value .
-            mDoStat = Boolean.parse(value, false);
+            mDoStat = Boolean.parse(value, DEFAULT_ENABLE_KICKSTART_STAT_OF_FILES);
             mDisableKickstartStatCompletely = !mDoStat;
         }
         mLogger.log(
@@ -415,8 +420,8 @@ public class Kickstart implements GridStart {
      * constituentJob description, and also constructs all the valid option to be passed to
      * kickstart for launching the executable.
      *
-     * @param constituentJob the <code>Job</code> object containing the constituentJob description
-     *     of the constituentJob that has to be enabled on the grid.
+     * @param job the <code>Job</code> object containing the constituentJob description of the
+     *     constituentJob that has to be enabled on the grid.
      * @param isGlobusJob is <code>true</code>, if the constituentJob generated a line <code>
      *     universe = globus</code>, and thus runs remotely. Set to <code>false</code>, if the
      *     constituentJob runs on the submit host in any way.
@@ -581,6 +586,10 @@ public class Kickstart implements GridStart {
             // add the -X flag to denote turning on
             gridStartArgs.append(" -X ");
         }
+
+        // GH-2156 for pegasusWorkflows we disable stat completely always
+        // 045-hierarchy-sharedfs-c test cases example
+        stat = (job instanceof DAXJob) ? false : stat;
 
         String statArgs =
                 generateStatArgumentOptions(
@@ -1230,6 +1239,8 @@ public class Kickstart implements GridStart {
             return "";
         }
 
+        boolean useCondorScratchDir = true;
+
         StringBuilder args = new StringBuilder();
         // PM-992 we stat outputs either if stat property is set
         // or registration is enabled. inputs are only stated if
@@ -1256,7 +1267,14 @@ public class Kickstart implements GridStart {
                         File file = new File(lof);
                         job.condorVariables.addIPFileForTransferFromWFSubmitDir(lof);
                         // arguments just need basename . no path component
-                        args.append(" -S @").append(file.getName()).append(" ");
+                        args.append(" -S @");
+                        if (useCondorScratchDir) {
+                            // GH-2156 pick lof file from the condor scratch dir
+                            args.append("$")
+                                    .append(Condor.CONDOR_SCRATCH_DIR_ENV_VARIABLE)
+                                    .append("/");
+                        }
+                        args.append(file.getName()).append(" ");
                         files.add(file.getName());
                     }
                 }
@@ -1269,7 +1287,14 @@ public class Kickstart implements GridStart {
                             File file = new File(lof);
                             job.condorVariables.addIPFileForTransferFromWFSubmitDir(lof);
                             // arguments just need basename . no path component
-                            args.append(" -s @").append(file.getName()).append(" ");
+                            args.append(" -s @");
+                            if (useCondorScratchDir) {
+                                // GH-2156 pick lof file from the condor scratch dir
+                                args.append("$")
+                                        .append(Condor.CONDOR_SCRATCH_DIR_ENV_VARIABLE)
+                                        .append("/");
+                            }
+                            args.append(file.getName()).append(" ");
                             files.add(file.getName());
                         }
                     }

@@ -40,7 +40,7 @@ class AbstractJob(HookMixin, ProfileMixin, MetadataMixin):
         """
         self._id = _id
         self.node_label = node_label
-        self.args = list()
+        self.args = []
         self.uses = set()
 
         self.stdout = None
@@ -751,6 +751,21 @@ class _Use:
         register_replica=True,
         bypass_staging=False,
     ):
+        """
+        :param file: the file being used
+        :type file: File
+        :param link_type: whether the file is an input, output, or checkpoint
+        :type link_type: _LinkType
+        :param stage_out: whether or not to send the file back to an output directory, defaults to True
+        :type stage_out: bool
+        :param register_replica: whether or not to register the replica, defaults to True
+        :type register_replica: bool
+        :param bypass_staging: whether to bypass staging (only valid for INPUT link type), defaults to False
+        :type bypass_staging: bool
+        :raises TypeError: file must be of type :py:class:`~Pegasus.api.replica_catalog.File`
+        :raises TypeError: link_type must be one of :py:class:`~Pegasus.api.workflow._LinkType`
+        :raises ValueError: bypass can only be set to True when link type is INPUT
+        """
         if not isinstance(file, File):
             raise TypeError(f"invalid file: {file}; file must be of type File")
 
@@ -807,6 +822,12 @@ class _JobDependency:
     """Internal class used to represent a jobs dependencies within a workflow"""
 
     def __init__(self, parent_id, children_ids):
+        """
+        :param parent_id: the id of the parent job
+        :type parent_id: str
+        :param children_ids: set of child job ids
+        :type children_ids: set
+        """
         self.parent_id = parent_id
         self.children_ids = children_ids
 
@@ -825,6 +846,8 @@ class _JobDependency:
 
 
 def _needs_client(f):
+    """Decorator that lazily initializes ``self._client`` from the environment before calling ``f``."""
+
     @wraps(f)
     def wrapper(self, *args, **kwargs):
         if not self._client:
@@ -836,6 +859,8 @@ def _needs_client(f):
 
 
 def _needs_submit_dir(f):
+    """Decorator that raises :py:class:`~Pegasus.api.errors.PegasusError` if ``self._submit_dir`` has not been set (i.e. :py:meth:`~Pegasus.api.workflow.Workflow.plan` has not been called yet)."""
+
     @wraps(f)
     def wrapper(self, *args, **kwargs):
         if not self._submit_dir:
@@ -1075,7 +1100,7 @@ class Workflow(Writable, HookMixin, ProfileMixin, MetadataMixin):
         random_dir: Union[bool, str, Path] = False,
         relative_submit_dir: Optional[Union[str, Path]] = None,
         inherited_rc_files: Optional[List[Union[str, Path]]] = None,
-        cleanup: str = "inplace",
+        cleanup: Optional[str] = None,
         reuse: Optional[List[Union[str, Path]]] = None,
         verbose: int = 0,
         quiet: int = 0,
@@ -1094,7 +1119,7 @@ class Workflow(Writable, HookMixin, ProfileMixin, MetadataMixin):
 
             try:
                 # configuration properties
-                properties = {"pegasus.mode": "development}
+                properties = {"pegasus.mode": "development"}
 
                 wf.plan(verbose=3, submit=True, **properties)
             except PegasusClientError as e:
@@ -1132,8 +1157,8 @@ class Workflow(Writable, HookMixin, ProfileMixin, MetadataMixin):
         :type relative_submit_dir: Optional[Union[str, Path]]
         :param inherited_rc_files: comma separated list of replica files, defaults to None
         :type inherited_rc_files: Optional[List[Union[str, Path]]]
-        :param cleanup: the cleanup strategy to use. Can be :code:`none|inplace|leaf|constraint`, defaults to :code:`inplace`
-        :type cleanup: str, optional
+        :param cleanup: the cleanup strategy to use. Can be a :code:`str` :code:`none|inplace|leaf|constraint`, defaults to None (internally, pegasus-plan will use the default :code:`inplace` if :code:`None` is given)
+        :type cleanup: Optional[str]
         :param reuse: list of submit directories of previous runs from which to pick up for reuse (e.g. :code:`["/workflows/submit_dir1", "/workflows/submit_dir2"]`), defaults to None
         :type reuse: Optional[List[Union[str,Path]]]
         :param verbose: verbosity, defaults to 0
@@ -1299,10 +1324,9 @@ class Workflow(Writable, HookMixin, ProfileMixin, MetadataMixin):
         :type legend: bool, optional
         :param noqueue: turns off the output from parsing Condor Q, defaults to False
         :type noqueue: bool, optional
-        :param debug:
+        :param debug: show debug output, defaults to False
         :type debug: bool, optional
-        :raises PegasusClientError: pegasus-status encountered an error
-        :return: self, current status information
+        :return: current status information as a dict, or None if json is False
         :rtype: Union[Dict,None]
         """
         display_status = Status()
@@ -1706,7 +1730,7 @@ class Workflow(Writable, HookMixin, ProfileMixin, MetadataMixin):
         """
         if not isinstance(tc, TransformationCatalog):
             raise TypeError(
-                "invalid catalog: {}; rc must be of type TransformationCatalog".format(
+                "invalid catalog: {}; tc must be of type TransformationCatalog".format(
                     tc
                 )
             )
@@ -1731,7 +1755,7 @@ class Workflow(Writable, HookMixin, ProfileMixin, MetadataMixin):
         add_dependency(self, job: Union[Job, SubWorkflow], *, parents: List[Union[Job, SubWorkflow]] = [], children: List[Union[Job, SubWorkflow]] = [])
         Add parent, child dependencies for a given job.
 
-        .. code-block::python
+        .. code-block:: python
 
             # Example 1: set parents of a given job
             wf.add_dependency(job3, parents=[job1, job2])

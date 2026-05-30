@@ -13,6 +13,7 @@ from pathlib import Path
 import click
 
 from Pegasus import braindump
+from Pegasus.client import agent
 from Pegasus.db import connection
 from Pegasus.db.connection import ConnectionError
 from Pegasus.db.workflow.stampede_statistics import StampedeStatistics
@@ -37,7 +38,7 @@ def remove_file(path: t.Union[str, os.PathLike]):
     Remove the file identified by the `path` from the file system.
 
     :param path: The path of the file to be removed.
-    :type path: t.Optional[str, os.PathLike]
+    :type path: t.Union[str, os.PathLike]
     """
     try:
         Path(path).unlink()
@@ -74,7 +75,7 @@ def pstr(value: t.Any, to: int = 2) -> str:
 
 @dataclass
 class JobStatistics:
-    """A data class to hols Job statistics data."""
+    """A data class to hold Job statistics data."""
 
     #: The name of the job.
     name: str = None
@@ -130,7 +131,7 @@ class JobStatistics:
 
 @dataclass
 class TransformationStatistics:
-    """A data class to hols Transformation statistics data."""
+    """A data class to hold Transformation statistics data."""
 
     #: The transformation name.
     transformation: str = None
@@ -615,6 +616,7 @@ class PegasusStatistics:
         is_pmc: bool = False,
         is_uuid: bool = False,
         submit_dirs: t.Sequence[str] = [],
+        ai: bool = True,
     ):
         """Initialize the Pegasus statistics object."""
         self.log = logging.getLogger("pegasus-statistics")
@@ -629,6 +631,7 @@ class PegasusStatistics:
         self.is_pmc = is_pmc
         self.is_uuid = is_uuid
         self.submit_dirs: t.Union[str, t.Sequence[str]] = submit_dirs or []
+        self.ai = ai
         self.wf_uuids: t.Union[str, t.Sequence[str]] = []
 
         self.wf_uuid_list: t.Sequence[t.Tuple[str, StampedeStatistics]] = []
@@ -1000,7 +1003,7 @@ class PegasusStatistics:
 
         # Go through each job in the workflow
         job_stats_list = []
-        job_retry_count_dict = dict()
+        job_retry_count_dict = {}
         for job in wf_job_stats_list:
             job_stats = JobStatistics()
             job_stats.name = job.job_name
@@ -1247,45 +1250,46 @@ class PegasusStatistics:
                 )
             )
 
-            # Integrity summary
-            if not int_metrics_summary:
-                return
+            ## Integrity summary
+            # if not int_metrics_summary:
+            #    return
 
-            writer.write(
-                """
-# Integrity Metrics
-# Number of files for which checksums were compared/computed along with total time spent doing it.\n"""
-            )
-            for result in int_metrics_summary:
-                type = result.type
-                if result.type == "check":
-                    type = "compared"
-                if result.type == "compute":
-                    type = "generated"
-                writer.write(
-                    f"{result.count} files checksums {type} with total duration of {format_seconds(result.duration)}\n"
-                )
+            # writer.write(
+            #    """
 
-            writer.write(
-                """
-# Integrity Errors
-# Total:
-#       Total number of integrity errors encountered across all job executions (including retries) of a workflow.
-# Failures:
-#       Number of failed jobs where the last job instance had integrity errors.
-"""
-            )
-            for result in int_error_summary:
-                type = "integrity" if result.name == "int.error" else result.name
-                writer.write(
-                    f"Total:    A total of {result.count} {type} errors encountered in the workflow\n"
-                )
+    # Integrity Metrics
+    # Number of files for which checksums were compared/computed along with total time spent doing it.\n"""
+    # )
+    # for result in int_metrics_summary:
+    #    type = result.type
+    #    if result.type == "check":
+    #        type = "compared"
+    #    if result.type == "compute":
+    #        type = "generated"
+    #    writer.write(
+    #        f"{result.count} files checksums {type} with total duration of {format_seconds(result.duration)}\n"
+    #    )
 
-            # PM-1295 jobs where last_job_instance failed and there were integrity errors in those last job instances
-            writer.write(
-                "Failures: %s job failures had integrity errors\n"
-                % (total_failed_jobs_integrity.failed or 0)
-            )
+    # writer.write(
+    #    """
+    # Integrity Errors
+    # Total:
+    #       Total number of integrity errors encountered across all job executions (including retries) of a workflow.
+    # Failures:
+    #       Number of failed jobs where the last job instance had integrity errors.
+    # """
+    # )
+    # for result in int_error_summary:
+    #    type = "integrity" if result.name == "int.error" else result.name
+    #    writer.write(
+    #        f"Total:    A total of {result.count} {type} errors encountered in the workflow\n"
+    #    )
+
+    ## PM-1295 jobs where last_job_instance failed and there were integrity errors in those last job instances
+    # writer.write(
+    #    "Failures: %s job failures had integrity errors\n"
+    #    % (total_failed_jobs_integrity.failed or 0)
+    # )
 
     def _write_summary_statistics_csv(self):
         """Write summary statistics data to a csv file."""
@@ -1846,6 +1850,47 @@ class PegasusStatistics:
                 self.log.warning("Error closing database")
                 self.log.debug("Error closing database", exc_info=1)
 
+    def ai_output(self):
+        """Output Pegasus statistics to AI tool."""
+
+        # use the summary and transformation stats for AI
+        extn = self.file_extn
+        summary_file = (
+            Path(self.output_dir) / f"{self.workflow_summary_file_name}.{extn}"
+        )
+        tf_file = (
+            Path(self.output_dir) / f"{self.transformation_stats_file_name}.{extn}"
+        )
+
+        stats_data = ""
+        if summary_file.exists():
+            with summary_file.open() as sf:
+                stats_data += sf.read()
+        if tf_file.exists():
+            with tf_file.open() as tf:
+                stats_data += tf.read()
+
+        if stats_data:
+            click.echo()
+            click.echo(" Pegasus AI Analysis ".center(80, "*"))
+            click.echo()
+            ai = agent.AgentClient()
+            agent_output = None
+            uuid = self.wf_uuids
+            if isinstance(uuid, list):
+                uuid = uuid[0]
+            if not uuid:
+                uuid = "unknown"
+            try:
+                agent_output = ai.statistics(uuid, stats_data)
+            except Exception as e:
+                click.echo(
+                    f"Error occurred while calling Pegasus Agent for AI analysis: {e}"
+                )
+            if agent_output is not None:
+                click.echo(agent_output)
+            click.echo()
+
     def console_output(self, ctx):
         """Print Pegasus statistics output to the console."""
 
@@ -1895,6 +1940,9 @@ class PegasusStatistics:
             msg = f"Failed to generate {self.errors} type(s) of statistics"
             self.log.critical(msg)
             raise PegasusStatisticsError(msg)
+
+        if self.ai:
+            self.ai_output()
 
     def __call__(self, ctx, verbose: int = 0, quiet: int = 0):
         """Main method of Pegasus statistics."""

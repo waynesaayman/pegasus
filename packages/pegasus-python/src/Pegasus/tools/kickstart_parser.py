@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 """
-Pegasus utility functions for pasing a kickstart output file and return wanted information
+Pegasus utility functions for parsing a kickstart output file and returning wanted information.
 
+Supports both YAML-format (Pegasus 5+) and XML-format (legacy) kickstart records.
 """
 
 import logging
@@ -11,6 +12,7 @@ import sys
 import traceback
 from enum import Enum
 from pprint import pprint
+from typing import Dict
 from xml.parsers import expat
 
 import yaml
@@ -298,7 +300,7 @@ class _YAMLParserToken(Enum):
 
 class YAMLParser(Parser):
     """
-    Represents the parser that parses the kickstart xml records
+    Represents the parser that parses kickstart YAML records.
     """
 
     def __init__(self, filename):
@@ -515,6 +517,8 @@ class YAMLParser(Parser):
             elif line[0] in [" ", "-", "l", "\n"]:
                 # for #2096 not clear if we need to check the first char of the line.
                 # l is for location multipart record
+                # We should check for the first char; else this parsing will break
+                # where the hpc scheduler may add their own epilogue at the end of the job.out
                 buffer.append(line)
 
         record = "".join(buffer)
@@ -571,6 +575,11 @@ class YAMLParser(Parser):
             [["machine", "uname_system"], ["system"]],
             [["machine", "uname_release"], ["release"]],
             [["machine", "uname_machine"], ["machine"]],
+            [["machine", "cpu_count"], ["cpu_count"]],
+            [["machine", "cpu_speed"], ["cpu_speed"]],
+            [["machine", "cpu_vendor"], ["cpu_vendor"]],
+            [["machine", "cpu_model"], ["cpu_model"]],
+            [["machine", "cpu_name"], ["cpu_model"]],
             [["mainjob", "executable", "file_name"], ["name"]],
             [["mainjob", "status", "raw"], ["raw"]],
             [["mainjob", "status", "signalled_signal"], ["signal"]],
@@ -608,6 +617,13 @@ class YAMLParser(Parser):
 
         # some mappings are based on lfns
         if "files" in data:
+            # GH-2155 compute the total sizes for input and output files
+            (total_ip_size_mb, total_op_size_mb) = self.compute_total_input_output(
+                **data["files"]
+            )
+            new_data["tot_ip_size_mb"] = total_ip_size_mb
+            new_data["tot_op_size_mb"] = total_op_size_mb
+
             for lfn in data["files"]:
                 file_data = data["files"][lfn]
                 output = file_data["output"] if "output" in file_data.keys() else False
@@ -649,6 +665,40 @@ class YAMLParser(Parser):
                 new_data["outputs"][lfn] = meta
 
         return new_data
+
+    def compute_total_input_output(self, **kwargs: Dict[str, Dict[str, str]]):
+        """
+        Takes in a dictionary indexed by LFN names, where each value is statinfo for the file.
+
+        :param kwargs: lfn -> statinfo(dict)
+        :return: total size of input files and output files in MB as determined from
+                 the stat records captured in the kickstart record.
+        """
+
+        # kickstart returns values as stat reports in bytes
+        total_input_size = 0
+        total_output_size = 0
+
+        for lfn, statinfo in kwargs.items():
+            # ignore stdin, stdout, stderr and metadata infos
+            if lfn in ["stdin", "stdout", "stderr", "metadata"]:
+                continue
+
+            if not "size" in statinfo:
+                # should not happen. a statinfo record without a size
+                continue
+
+            if "output" in statinfo:
+                if statinfo["output"]:
+                    total_output_size += int(statinfo["size"])
+            else:
+                total_input_size += int(statinfo["size"])
+
+        # convert to MB before returning and round to 6 digits
+        # to account for small files that are in bytes
+        total_ip_size_mb = round(total_input_size / (1024 * 1024), 6)
+        total_op_size_mb = round(total_output_size / (1024 * 1024), 6)
+        return total_ip_size_mb, total_op_size_mb
 
     def parse_invocation_record(self, buffer=""):
         """
@@ -704,6 +754,14 @@ class YAMLParser(Parser):
                 "KICKSTART-PARSE-ERROR --> yaml error in multipart record %s : %s"
                 % (self._kickstart_output_file, str(e))
             )
+
+        # For GH-2031 in case location record is malformed i.e includes html etc
+        # our parser does not return the content so will be a None record returned
+        if entries is None:
+            logger.error(
+                "A multipart record in %s is malformed." % self._kickstart_output_file
+            )
+            return {}
 
         # for integrity multipart a list of dict is returned as entries
         # However, for location record (which is just one) a dict is returned

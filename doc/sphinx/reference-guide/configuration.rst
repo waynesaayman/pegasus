@@ -17,7 +17,7 @@ infrastructure. They provide an abstract yet uniform interface to
 specify configuration options for various layers from planner/mapper
 behavior to remote environment settings. At various stages during the
 mapping process, profiles may be added associated with the job. The
-system supports five diffferent namespaces, with each namespace refers
+system supports five different namespaces, with each namespace refers
 to a different aspect of a job's runtime settings. A profile's
 representation in the executable workflow (e.g. the Condor submit files)
 depends on its namespace. Pegasus supports the following Namespaces for
@@ -427,15 +427,9 @@ RSL specification.
     | | Since : 2.0                      |                                                               |
     | | Type :Integer                    |                                                               |
     +------------------------------------+---------------------------------------------------------------+
-    | | Property Key: globus.maxtime     | | the maximum time or walltime in minutes for a single        |
-    | | Profile Key:maxtime              | | execution of a job.                                         |
-    | | Scope : TC, SC, DAX, Properties  |                                                               |
-    | | Since : 2.0                      |                                                               |
-    | | Type  : Integer                  |                                                               |
-    +------------------------------------+---------------------------------------------------------------+
-    | | Property Key: globus.maxwalltime | | the maximum walltime in minutes for a single execution      |
-    | | Profile Key: maxwalltime         | | of a job.                                                   |
-    | | Scope : TC, SC, DAX, Properties  |                                                               |
+    | | Property Key: globus.maxwalltime | | the maximum walltime in seconds for a single execution      |
+    | | Profile Key: maxwalltime         | | of a job. Units changed from minutes to seconds starting    |
+    | | Scope : TC, SC, DAX, Properties  | | 5.1.3/5.2.0 releases.                                       |
     | | Since : 2.0                      |                                                               |
     | | Type :Integer                    |                                                               |
     +------------------------------------+---------------------------------------------------------------+
@@ -1149,7 +1143,7 @@ by the local attributes.sh. The profiles are described below.
     | | Since : 4.6                               |                                                                  |
     | | Type : Integer                            |                                                                  |
     +---------------------------------------------+------------------------------------------------------------------+
-    | | Property Key: pegasus.memory              | Indicates the maximum memory a job requires in MB.               |
+    | | Property Key: pegasus.memory              | Indicates the total memory a job requires in MB.                 |
     | | Profile Key: memory                       |                                                                  |
     | | Scope : TC, SC, Abstract WF, Properties   |                                                                  |
     | | Since : 4.6                               |                                                                  |
@@ -1970,23 +1964,45 @@ Catalog Related Properties
 
 .. table:: Site Catalog Properties
 
-    +---------------------------------------------+------------------------------------------------------------------+
-    | Key Attributes                              | Description                                                      |
-    +=============================================+==================================================================+
-    | | Property Key: pegasus.catalog.site        | | Pegasus supports two different types of site catalogs in       |
-    | | Profile Key: N/A                          | | :ref:`YAML <sc-YAML>` or :ref:`XML <sc-XML4>` formats          |
-    | | Scope : Properties                        |                                                                  |
-    | | Type : Enumeration                        |                                                                  |
-    | | Values : YAML|XML                         | | Pegasus is able to auto-detect what schema a user site         |
-    | | Since : 2.0                               | | catalog refers to. Hence, this property may no longer be set.  |
-    | | Default : YAML                            |                                                                  |
-    +---------------------------------------------+------------------------------------------------------------------+
-    | | Property Key: pegasus.catalog.site.file   | | The path to the site catalog file, that describes the various  |
-    | | Profile Key : N/A                         | | sites and their layouts to Pegasus.                            |
-    | | Scope : Properties                        |                                                                  |
-    | | Since : 2.0                               |                                                                  |
-    | | Default : $PWD/sites.yml | $PWD/sites.xml |                                                                  |
-    +---------------------------------------------+------------------------------------------------------------------+
+    +-----------------------------------------------------+----------------------------------------------------------------------+
+    | Key Attributes                                      | Description                                                          |
+    +=====================================================+======================================================================+
+    | | Property Key: pegasus.catalog.site                | | Pegasus supports two different types of site catalogs in           |
+    | | Profile Key: N/A                                  | | :ref:`YAML <sc-YAML>` format.                                      |
+    | | Scope : Properties                                |                                                                      |
+    | | Type : Enumeration                                |                                                                      |
+    | | Values : YAML|XML                                 | | Pegasus is able to auto-detect what schema a user site             |
+    | | Since : 2.0                                       | | catalog refers to. Hence, this property may no longer be set.      |
+    | | Default : YAML                                    |                                                                      |
+    +-----------------------------------------------------+----------------------------------------------------------------------+
+    | | Property Key: pegasus.catalog.site.file           | | The path to the site catalog file, that describes the various      |
+    | | Profile Key : N/A                                 | | sites and their layouts to Pegasus.                                |
+    | | Scope : Properties                                |                                                                      |
+    | | Since : 2.0                                       |                                                                      |
+    | | Default : $PWD/sites.yml | $PWD/sites.xml         |                                                                      |
+    +-----------------------------------------------------+----------------------------------------------------------------------+
+    | | Property Key: pegasus.catalog.site.repo           | | Override the default GitHub repo from where to download the site   |
+    | | Profile Key : N/A                                 | | catalog from . Defaults to                                         |
+    | | Scope : Properties                                | | https://raw.githubusercontent.com/pegasushub/pegasus-site-catalogs |
+    | | Since : 5.1.3                                     |                                                                      |
+    | | Type : URL                                        |                                                                      |
+    | | Default : (no default)                            |                                                                      |
+    +-----------------------------------------------------+----------------------------------------------------------------------+
+    | | Property Key: pegasus.catalog.site.repo.file      | | The file to download from the conf directory in the GitHub repo.   |
+    | | Profile Key : N/A                                 | | The file is downloaded from the branch corresponding to the        |
+    | | Scope : Properties                                | | Pegasus version (MAJOR.MINOR).                                     |
+    | | Type : String                                     |                                                                      |
+    | | Since : 5.1.3                                     |                                                                      |
+    | | Default : (no default)                            |                                                                      |
+    +-----------------------------------------------------+----------------------------------------------------------------------+
+    | | Property Key: pegasus.catalog.site.repo.interval  | | The update interval at which to download a previously              |
+    | | Profile Key : N/A                                 | | downloaded file again. Value specified in seconds                  |
+    | | Scope : Properties                                | | Pegasus version.                                                   |
+    | | Type : long                                       |                                                                      |
+    | | Since : 5.1.3                                     |                                                                      |
+    | | Default : 86400                                   |                                                                      |
+    +-----------------------------------------------------+----------------------------------------------------------------------+
+
 
 .. table:: Transformation Catalog Properties
 
@@ -3467,6 +3483,7 @@ Miscellaneous Properties
     | | Since : 5.1.1                                   | |                                                           |
     | | Type : Integer in MB                            | |                                                           |
     | | Default : 500                                   | |                                                           |
+    | | Maximum : 2047                                  | |                                                           |
     +---------------------------------------------------+-------------------------------------------------------------+
     | | Property Key: pegasus.credential.encrypt        | | If this property is set to true, then the planner         |
     | |                                                 | | will turn ON the encryption of credential when            |

@@ -1431,6 +1431,7 @@ public class CondorGenerator extends Abstract {
      * @param workflow the executable workflow
      * @return Map containing entries for dag and condor_log
      */
+    @Override
     public Map<String, String> getAdditionalBraindumpEntries(ADag workflow) {
         Map entries = new HashMap();
         entries.put(Braindump.GENERATOR_TYPE_KEY, "dag");
@@ -1438,6 +1439,12 @@ public class CondorGenerator extends Abstract {
         entries.put("condor_log", new File(this.getCondorLogInSubmitDirectory(workflow)).getName());
         entries.put(
                 "notify", this.getDAGFilename(workflow, MonitordNotify.NOTIFICATIONS_FILE_SUFFIX));
+
+        // GH-2166 encode app name if specified
+        if (this.mAppName != null) {
+            entries.put(Braindump.APP_KEY, this.mAppName);
+        }
+
         return entries;
     }
 
@@ -1561,12 +1568,15 @@ public class CondorGenerator extends Abstract {
             // check if transfer_executable was set to
             // true by the user at runtime
         }
+
         key = "transfer_executable";
+        String transfer_exec_value = "false";
         if (cvar.containsKey(key)) {
             // we do not put in the default value
+            transfer_exec_value = (String) cvar.get(key);
         } else {
             // we assume pre-staged executables through the GVDS
-            cvar.construct(key, "false");
+            cvar.construct(key, transfer_exec_value);
         }
 
         key = "copy_to_spool";

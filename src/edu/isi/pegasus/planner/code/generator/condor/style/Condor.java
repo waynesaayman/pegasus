@@ -20,14 +20,15 @@ import edu.isi.pegasus.planner.classes.AggregatedJob;
 import edu.isi.pegasus.planner.classes.Job;
 import edu.isi.pegasus.planner.classes.PegasusBag;
 import edu.isi.pegasus.planner.classes.TransferJob;
+import edu.isi.pegasus.planner.code.generator.condor.ClassADSGenerator;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyleException;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyleFactoryException;
 import edu.isi.pegasus.planner.common.PegasusConfiguration;
 import edu.isi.pegasus.planner.namespace.ENV;
 import edu.isi.pegasus.planner.namespace.Pegasus;
 import java.io.File;
-import java.util.Iterator;
 import java.util.Map;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * Enables a job to be directly submitted to the condor pool of which the submit host is a part of.
@@ -146,6 +147,7 @@ public class Condor extends Abstract {
      * @param job the job on which the style needs to be applied.
      * @throws CondorStyleException in case of any error occuring code generation.
      */
+    @Override
     public void apply(Job job) throws CondorStyleException {
 
         String workdir = job.getDirectory();
@@ -261,10 +263,18 @@ public class Condor extends Abstract {
                     && (condorOutputTransfers == null || condorOutputTransfers.isEmpty())) {
                 // add +TransferOutput instead of transfer_output_files
                 job.condorVariables.removeOutputFilesForTransfer();
-                job.condorVariables.construct(EMPTY_TRANSFER_OUTPUT_KEY, "\"\"");
-                mLogger.log(
-                        "Added empty " + EMPTY_TRANSFER_OUTPUT_KEY + " key for job " + job.getID(),
-                        LogManager.DEBUG_MESSAGE_LEVEL);
+                // GH-2141 only add the empty transfer output key
+                // only if no output remaps are specified
+                if (!job.condorVariables.containsKey(
+                        edu.isi.pegasus.planner.namespace.Condor.TRANSFER_OP_REMAPS_KEY)) {
+                    job.condorVariables.construct(EMPTY_TRANSFER_OUTPUT_KEY, "\"\"");
+                    mLogger.log(
+                            "Added empty "
+                                    + EMPTY_TRANSFER_OUTPUT_KEY
+                                    + " key for job "
+                                    + job.getID(),
+                            LogManager.DEBUG_MESSAGE_LEVEL);
+                }
             }
 
         } else if (universe.equalsIgnoreCase(Condor.SCHEDULER_UNIVERSE)
@@ -319,25 +329,84 @@ public class Condor extends Abstract {
             String classAdKey = entry.getKey();
             String pegasusKey = entry.getValue();
 
+            // GH-2174 instead of putting in an actual value, refer to
+            // the corresponding pegasus classad key to the Pegasus Profile
+            // as a variable
+            String pegasusClassADKey =
+                    ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(pegasusKey);
+
+            if (classAdKeys.containsKey(classAdKey)) {
+                // GH-2169 warn if classad key is already set, as everything should
+                // be using pegasus profiles
+
+                // resource classad directly set as a condor profile
+                // we warn only if the value is numeric, as if a user
+                // specifies a classad expression then we need to allow it.
+                // pegasus resource profiles are numeric only!
+                String condorProfileValue = (String) classAdKeys.get(classAdKey);
+
+                if (StringUtils.isNumeric(condorProfileValue)) {
+                    // stringutils is faster than using parseLong etc
+                    // https://www.baeldung.com/java-check-string-number
+                    mLogger.log(
+                            String.format(
+                                    "For job %s condor profile %s was set directly to %s . Using that for the job. For numeric values, only set/associate corresponding pegasus resource profile %s for the job.",
+                                    job.getID(), classAdKey, condorProfileValue, pegasusKey),
+                            LogManager.WARNING_MESSAGE_LEVEL);
+
+                    if (classAdKey.equals(
+                            edu.isi.pegasus.planner.namespace.Condor.REQUEST_DISK_KEY)) {
+                        // PM-1912 the pegasus profile value is in MB while
+                        // request_disk condor classad value is specified in KB
+                        long value = Long.parseLong(condorProfileValue);
+                        condorProfileValue = Long.toString(value / 1024);
+                        // specify the unit in MB
+                        pegasusClassADKey += " MB";
+                    }
+                }
+                // GH-2174 if a user did specify a condor classad resource key such
+                //  as request_cpus etc;
+                //     set the condor request_* to the corresponding +pegasus_* variable
+                //     update the pegasus key to the condor value,
+                profiles.construct(pegasusKey, condorProfileValue);
+                // the condor value is now just a referece to the +pegasus key
+                classAdKeys.construct(classAdKey, pegasusClassADKey);
+            }
+
             if (!classAdKeys.containsKey(classAdKey) && profiles.containsKey(pegasusKey)) {
                 String pegasusProfileValue = profiles.getStringValue(pegasusKey);
-                if (classAdKey.equals(edu.isi.pegasus.planner.namespace.Condor.REQUEST_DISK_KEY)) {
+                if (classAdKey.equals(edu.isi.pegasus.planner.namespace.Condor.REQUEST_DISK_KEY)
+                        || classAdKey.equals(
+                                edu.isi.pegasus.planner.namespace.Condor.REQUEST_MEMORY_KEY)) {
                     // PM-1912 the pegasus profile value is in MB while
                     // request_disk condor classad value is specified in KB
-                    long disk = profiles.getLongValue(pegasusKey, -1);
-                    if (disk == -1) {
+                    long value = profiles.getLongValue(pegasusKey, -1);
+                    if (value == -1) {
                         throw new RuntimeException(
                                 "For job "
                                         + job.getLogicalID()
-                                        + " invalid value for request_disk "
+                                        + " invalid value for "
+                                        + pegasusKey
                                         + pegasusProfileValue);
                     }
-                    pegasusProfileValue = Long.toString(disk * 1024);
                 }
-                // one to one mapping
-                classAdKeys.construct(classAdKey, pegasusProfileValue);
+                // GH-2174 instead of putting in an actual value, refer to
+                // the corresponding pegasus classad key to the Pegasus Profile
+                // as a variable
+                if (pegasusKey.equals(Pegasus.MEMORY_KEY)
+                        || pegasusKey.equals(Pegasus.DISKSPACE_KEY)) {
+                    // specify the unit in MB
+                    pegasusClassADKey += " MB";
+                }
+                // now set the condor request_* to the corresponding +pegasus_* variable
+                classAdKeys.construct(classAdKey, pegasusClassADKey);
             }
         }
+
+        // GH-2167 we we will let the resource limits percolate to compute jobs running in local and
+        // scheduler universe and do nothing special as in removal of request_cpus attributes
+        // as we did earlier
+        /*
         if (universe.equalsIgnoreCase(Condor.SCHEDULER_UNIVERSE)
                 || universe.equalsIgnoreCase(Condor.LOCAL_UNIVERSE)) {
             // PM-1206, PM-1864 remove request_ keys as they are not handled in local universe
@@ -355,6 +424,7 @@ public class Condor extends Abstract {
                 }
             }
         }
+        */
     }
 
     /**

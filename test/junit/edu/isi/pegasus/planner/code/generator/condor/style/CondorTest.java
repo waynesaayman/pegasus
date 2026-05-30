@@ -15,7 +15,8 @@
  */
 package edu.isi.pegasus.planner.code.generator.condor.style;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 
 import edu.isi.pegasus.common.credential.CredentialHandlerFactory;
 import edu.isi.pegasus.common.credential.impl.PegasusCredentials;
@@ -31,6 +32,7 @@ import edu.isi.pegasus.planner.catalog.site.classes.SiteCatalogEntry;
 import edu.isi.pegasus.planner.catalog.site.classes.SiteStore;
 import edu.isi.pegasus.planner.classes.Job;
 import edu.isi.pegasus.planner.classes.PegasusBag;
+import edu.isi.pegasus.planner.code.generator.condor.ClassADSGenerator;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyleException;
 import edu.isi.pegasus.planner.common.PegasusProperties;
 import edu.isi.pegasus.planner.namespace.ENV;
@@ -139,10 +141,19 @@ public class CondorTest {
     }
 
     @Test
+    public void testCondorRequestMemoryExpressionKey() throws CondorStyleException {
+        Job j = new Job();
+        String expr = "ifthenelse(isundefined(DAGNodeRetry) || DAGNodeRetry == 0, 1024, 4096)";
+        j.vdsNS.checkKeyInNS(Pegasus.MEMORY_KEY, "5");
+        j.condorVariables.checkKeyInNS(REQUEST_MEMORY_KEY, expr);
+        testForKey(j, REQUEST_MEMORY_KEY, expr);
+    }
+
+    @Test
     public void testPegasusProfileDiskspaceAndCondorKey() throws CondorStyleException {
         Job j = new Job();
         j.vdsNS.checkKeyInNS(Pegasus.DISKSPACE_KEY, "5");
-        testForKey(j, REQUEST_DISK_KEY, Long.toString(5 * 1024));
+        testForKey(j, REQUEST_DISK_KEY, "5");
     }
 
     @Test
@@ -366,10 +377,21 @@ public class CondorTest {
                 "testForS3CredentialForLocalExecWithEntryNotInCredFile");
     }
 
-    private void testForKey(Job j, String key, String expectedValue) throws CondorStyleException {
+    private void testForKey(Job j, String condorProfileKey, String expectedValue)
+            throws CondorStyleException {
+        mCS.initialize(mBag, null);
         mCS.apply(j);
-        assertTrue(j.condorVariables.containsKey(key));
-        assertEquals(expectedValue, j.condorVariables.get(key));
+
+        // GH-2174 we need to check with the corresponding classad key
+        String pegasusProfileKey =
+                edu.isi.pegasus.planner.namespace.Condor.classAdKeysToPegasusProfiles()
+                        .get(condorProfileKey);
+        String classAdKey =
+                ClassADSGenerator.pegasusProfilesToPegasusClassAdKeys().get(pegasusProfileKey);
+
+        assertThat(j.condorVariables.containsKey(condorProfileKey), is(true));
+        assertThat(j.vdsNS.containsKey(pegasusProfileKey), is(true));
+        assertThat(j.vdsNS.get(pegasusProfileKey), is(expectedValue));
     }
 
     private void testForCredentialForRemoteExec(
@@ -451,26 +473,13 @@ public class CondorTest {
 
         // System.err.println(j);
 
-        assertEquals(
-                expectedEnv.size(),
-                j.envVariables.size(),
-                "Num of Environment Variables in " + j.envVariables);
+        assertThat(j.envVariables.size(), is(expectedEnv.size()));
         for (Object key : expectedEnv.keySet()) {
-            assertEquals(
-                    expectedEnv.get(key),
-                    j.envVariables.get(key),
-                    "Value for key " + key + " in " + j.envVariables);
+            assertThat(j.envVariables.get(key), is(expectedEnv.get(key)));
         }
-        // System.err.println(j.condorVariables);
-        assertEquals(
-                expectedCondorVariables.size(),
-                j.condorVariables.size(),
-                "Num of Condor Variables in " + j.condorVariables);
+        assertThat(j.condorVariables.size(), is(expectedCondorVariables.size()));
         for (Object key : expectedCondorVariables.keySet()) {
-            assertEquals(
-                    expectedCondorVariables.get(key),
-                    j.condorVariables.get(key),
-                    "Value for key " + key + " in " + j.condorVariables);
+            assertThat(j.condorVariables.get(key), is(expectedCondorVariables.get(key)));
         }
 
         mLogger.logEventCompletion(0);

@@ -58,7 +58,8 @@ public class GridGateway extends AbstractSiteData {
         nordugrid,
         unicore,
         ec2,
-        deltacloud
+        deltacloud,
+        sfapi
     };
 
     /** An enumeration of types of jobs handled by an instance of a grid gateway. */
@@ -78,6 +79,7 @@ public class GridGateway extends AbstractSiteData {
         condor,
         sge,
         slurm,
+        flux,
         unknown
     };
 

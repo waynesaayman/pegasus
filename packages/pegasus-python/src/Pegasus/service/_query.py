@@ -21,7 +21,7 @@ OPERATORS = {
     ast.Add: operator.__add__,
     ast.Sub: operator.__sub__,
     ast.Mult: operator.__mul__,
-    ast.Div: operator.__div__,
+    ast.Div: operator.__truediv__,
 }
 
 BOOLEAN_OPERATORS = {ast.And: and_, ast.Or: or_}
@@ -195,6 +195,10 @@ class _QueryEvaluator(ast.NodeVisitor):
 
     def visit_NameConstant(self, n):
         self._log.info("NameConstant <%s>", n.value)
+        return n.value
+
+    def visit_Constant(self, n):
+        """Since version 3.8: Methods visit_Num(), visit_Str(), visit_Bytes(), visit_NameConstant() and visit_Ellipsis()"""
         return n.value
 
     def visit_List(self, n):

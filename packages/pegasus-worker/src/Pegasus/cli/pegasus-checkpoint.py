@@ -13,6 +13,13 @@ import time
 from pathlib import Path
 from typing import Iterable, List, Set
 
+# PEGASUS_PYTHONPATH is set by the pegasus-python-wrapper script
+peg_path = os.environ.get("PEGASUS_PYTHONPATH")
+if peg_path:
+    for p in reversed(peg_path.split(":")):
+        if p not in sys.path:
+            sys.path.insert(0, p)
+
 ptransfer_module = importlib.import_module("Pegasus.cli.pegasus-transfer")
 pegasus_transfer = ptransfer_module.pegasus_transfer
 
@@ -29,6 +36,13 @@ PEGASUS_CHECKPOINT_PID_FILE = "pegasus_checkpoint.pid"
 
 
 def parse_args(args: List[str] = sys.argv[1:]) -> argparse.Namespace:
+    """Parse command-line arguments for pegasus-checkpoint.
+
+    :param args: command-line argument list; defaults to ``sys.argv[1:]``
+    :type args: List[str]
+    :return: parsed arguments namespace
+    :rtype: argparse.Namespace
+    """
     parser = argparse.ArgumentParser(
         description="Periodically transfer checkpoints back to staging site."
     )
@@ -188,7 +202,6 @@ class CheckpointWorker(threading.Thread):
         Wait for notification to start working. Once notified, create the
         checkpoint archive file and transfer back to staging site with either
         pegasus-transfer or condor_chirp.
-        self.log.debug("{} started".format(self.name))
         """
         while True:
             # wait till we are notified

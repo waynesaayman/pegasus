@@ -406,21 +406,235 @@ Setting job requirements
 
 The job requirements are constructed based on the following profiles:
 
-.. table:: Mapping of Pegasus Profiles to Batch Scheduler Job Requirements
+.. table:: Mapping of Pegasus profiles to HTCondor Remote CE Requirments and Description
 
-   ======================= ============================= ====================== ================== ================ =================== ================= =====================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================
-   Profile Key             Key in +remote_cerequirements SLURM parameter        PBS Parameter      SGE Parameter    Moab Parameter      Cobalt Parameter  Description
-   ======================= ============================= ====================== ================== ================ =================== ================= =====================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================
-   pegasus.cores           CORES                         --ntasks cores         n/a                -pe ompi         n/a                 --proccount cores Pegasus uses cores to calculate either nodes or ppn. If cores and ppn are specified, then nodes is computed. If cores and nodes is specified, then ppn is computed. If both nodes and ppn are specified, then cores is ignored. The resulting values for nodes and ppn are used to set the job requirements for PBS and Moab. If neither nodes nor ppn is specified, then no requirements are set in the PBS or Moab submit script. For SGE, how the processes are distributed over nodes depends on how the parallel environment has been configured; it is set to 'ompi' by default.
-   pegasus.nodes           NODES                         --nodes nodes          -l nodes           n/a              -l nodes            -n nodes          This specifies the number of nodes that the job should use. This is not used for SGE.
-   pegasus.ppn             PROCS                         n/a                    -l ppn             n/a              -l ppn              --mode c[ppn]     This specifies the number of processors per node that the job should use. This is not used for SGE.
-   pegasus.runtime         WALLTIME                      --time walltime        -l walltime        -l h_rt          -l walltime         -t walltime       This specifies the maximum runtime for the job in seconds. It should be an integer value. Pegasus converts it to the "hh:mm:ss" format required by the batch system. The value is rounded up to the next whole minute.
-   pegasus.memory          PER_PROCESS_MEMORY            --mem memory           -l pmem            -l h_vmem        --mem-per-cpu pmem  n/a               This specifies the maximum amount of physical memory used by any process in the job. For example, if the job runs four processes and each requires up to 2 GB (gigabytes) of memory, then this value should be set to "2gb" for PBS and Moab, and "2G" for SGE. The corresponding PBS directive would be "#PBS -l pmem=2gb".
-   pegasus.project         PROJECT                       --account project_name -A project_name    n/a              -A project_name     -A project_name   Causes the job time to be charged to or associated with a particular project/account. This is not used for SGE.
-   pegasus.queue           QUEUE                         --partition            -q                 -q               -q                                    This specifies the queue for the job. This profile does not have a corresponding value in ``+remote_cerequirements``. Instead, Pegasus sets the ``batch_queue`` key in the Condor submit file, which gLite/blahp translates into the appropriate batch system requirement.
-   globus.totalmemory      TOTAL_MEMORY                  --mem memory           -l mem             n/a              -l mem              n/a               The total memory that your job requires. It is usually better to just specify the pegasus.memory profile. This is not mapped for SGE.
-   pegasus.glite.arguments EXTRA_ARGUMENTS               prefixed by "#SBATCH"  prefixed by "#PBS" prefixed by "#?" prefixed by "#MSUB" n/a               This specifies the extra arguments that must appear in the generated submit script for a job. The value of this profile is added to the submit script prefixed by the batch system-specific value. These requirements override any requirements specified using other profiles. This is useful when you want to pass through special options to the underlying batch system. For example, on the USC cluster we use resource properties to specify the network type. If you want to use the Myrinet network, you must specify something like "-l nodes=8:ppn=2:myri". For infiniband, you would use something like "-l nodes=8:ppn=2:IB". In that case, both the nodes and ppn profiles would be effectively ignored.
-   ======================= ============================= ====================== ================== ================ =================== ================= =====================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | Profile Key             | | Key in                 |                                                                                 |
+    |                         | | +remote_cerequirements | Description                                                                     |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | pegasus.cores           | CORES                    | | Pegasus uses cores to calculate either nodes or ppn.                          |
+    |                         |                          | | If cores and ppn are specified, then nodes is computed.                       |
+    |                         |                          | | If cores and nodes is specified, then ppn is computed.                        |
+    |                         |                          | | If both nodes and ppn are specified, then cores is ignored.                   |
+    |                         |                          | | The resulting values for nodes and ppn are used to set the job                |
+    |                         |                          | | requirements for PBS and Moab. If neither nodes nor ppn is                    |
+    |                         |                          | | specified, then no requirements are set in the PBS or Moab                    |
+    |                         |                          | | submit script. For SGE, how the processes are distributed                     |
+    |                         |                          | | over nodes depends on how the parallel environment has been                   |
+    |                         |                          | | configured; it is set to ‘ompi’ by default.                                   |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | pegasus.nodes           | NODES                    | | This specifies the number of nodes that the job should use.                   |
+    |                         |                          | | This is not used for SGE.                                                     |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | pegasus.ppn             | PROCS                    | | This specifies the number of processors per node that the job                 |
+    |                         |                          | | should use.  This is not used for SGE.                                        |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | pegasus.runtime         | WALLTIME                 | | This specifies the maximum runtime for the job in seconds. It                 |
+    |                         |                          | | should be an integer value. Pegasus converts it to the “hh:mm:ss”             |
+    |                         |                          | | format required by the batch system. The value is rounded up                  |
+    |                         |                          | | to the next whole minute.                                                     |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    |                         | PER_PROCESS_MEMORY       | | This specifies the maximum amount of physical memory used by                  |
+    |                         |                          | | any process in the job. For example, if the job runs four processes           |
+    |                         |                          | | and each requires up to 2 GB (gigabytes) of memory, then this value           |
+    |                         |                          | | should be set to “2gb” for PBS and Moab, and “2G” for SGE.                    |
+    |                         |                          | | The corresponding PBS directive would be “#PBS -l pmem=2gb”.                  |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | pegasus.project         | PROJECT                  | | Causes the job time to be charged to or associated with a particular          |
+    |                         |                          | | project/account. This is not used for SGE.                                    |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | pegasus.queue           | QUEUE                    | | This specifies the queue for the job. This profile does not have a            |
+    |                         |                          | | corresponding value in +remote_cerequirements. Instead, Pegasus sets          |
+    |                         |                          | | the batch_queue key in the Condor submit file, which gLite/blahp translates   |
+    |                         |                          | | into the appropriate batch system requirement.                                |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | pegasus.memory          | TOTAL_MEMORY             | | The total memory that your job requires. It is usually better to              |
+    |                         |                          | | just specify the pegasus.memory profile. This is not mapped for               |
+    |                         |                          | | SGE. Before 5.1.3/5.2.0 release this was mapped to PER_PROCESS_MEMORY         |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+    | pegasus.glite.arguments | EXTRA_ARGUMENTS          | | This specifies the extra arguments that must appear in the generated          |
+    |                         |                          | | submit script for a job. The value of this profile is added to the            |
+    |                         |                          | | submit script prefixed by the batch system-specific value.                    |
+    |                         |                          | | These requirements override any requirements specified using other profiles.  |
+    |                         |                          | | This is useful when you want to pass through special options to               |
+    |                         |                          | | the underlying batch system. For example, on the USC cluster we use           |
+    |                         |                          | | resource properties to specify the network type. If you want to use the       |
+    |                         |                          | | Myrinet network, you must specify something like “-l nodes=8:ppn=2:myri”.     |
+    |                         |                          | | For infiniband, you would use something like “-l nodes=8:ppn=2:IB”.           |
+    |                         |                          | | In that case, both the nodes and ppn profiles would be effectively ignored.   |
+    +-------------------------+--------------------------+---------------------------------------------------------------------------------+
+
+.. note::
+
+   Starting 5.1.3/5.2.0 release, pegasus.memory maps to TOTAL_MEMORY in remote_ce_requirements. Before then,
+   it used to map to PER_PROCESS_MEMORY.
+
+
+The tables below indicate the mapping of Pegasus profile keys to various scheduler specific directives.
+
+.. tabs::
+
+    .. tab:: SLURM
+
+        .. table:: Mapping to SLURM directives
+
+            +-------------------------+------------------------+-----------------------+
+            | Profile Key             | Key in                 | SLURM Parameter       |
+            |                         | +remote_cerequirements |                       |
+            +-------------------------+------------------------+-----------------------+
+            | pegasus.cores           | CORES                  | –ntasks cores         |
+            +-------------------------+------------------------+-----------------------+
+            | pegasus.nodes           | NODES                  | –nodes nodes          |
+            +-------------------------+------------------------+-----------------------+
+            | pegasus.ppn             | PROCS                  | n/a                   |
+            +-------------------------+------------------------+-----------------------+
+            | pegasus.runtime         | WALLTIME               | –time walltime        |
+            +-------------------------+------------------------+-----------------------+
+            | pegasus.memory          | TOTAL_MEMORY           | –mem memory           |
+            +-------------------------+------------------------+-----------------------+
+            | pegasus.project         | PROJECT                | –account prjectname   |
+            +-------------------------+------------------------+-----------------------+
+            | pegasus.queue           | QUEUE                  | –partition            |
+            +-------------------------+------------------------+-----------------------+
+            | pegasus.glite.arguments | EXTRA_ARGUMENTS        | prefixed by “#SBATCH” |
+            +-------------------------+------------------------+-----------------------+
+
+    .. tab:: PBS
+
+        .. table:: Mapping to PBS directives
+
+            +-------------------------+------------------------+--------------------+
+            | Profile Key             | Key in                 | PBS Parameter      |
+            |                         | +remote_cerequirements |                    |
+            +-------------------------+------------------------+--------------------+
+            | pegasus.cores           | CORES                  | n/a                |
+            +-------------------------+------------------------+--------------------+
+            | pegasus.nodes           | NODES                  | -l nodes           |
+            +-------------------------+------------------------+--------------------+
+            | pegasus.ppn             | PROCS                  | -l ppn             |
+            +-------------------------+------------------------+--------------------+
+            | pegasus.runtime         | WALLTIME               | -l walltime        |
+            +-------------------------+------------------------+--------------------+
+            | pegasus.memory          | TOTAL_MEMORY           | -l pmem            |
+            +-------------------------+------------------------+--------------------+
+            | pegasus.project         | PROJECT                | -A project_name    |
+            +-------------------------+------------------------+--------------------+
+            | pegasus.queue           | QUEUE                  | -q                 |
+            +-------------------------+------------------------+--------------------+
+            | pegasus.glite.arguments | EXTRA_ARGUMENTS        | prefixed by “#PBS” |
+            +-------------------------+------------------------+--------------------+
+
+    .. tab:: SGE
+
+        .. table:: Mapping to SGE directives
+
+            +-------------------------+------------------------+------------------+
+            | Profile Key             | Key in                 | SGE Parameter    |
+            |                         | +remote_cerequirements |                  |
+            +-------------------------+------------------------+------------------+
+            | pegasus.cores           | CORES                  | -pe ompi         |
+            +-------------------------+------------------------+------------------+
+            | pegasus.nodes           | NODES                  | n/a              |
+            +-------------------------+------------------------+------------------+
+            | pegasus.ppn             | PROCS                  | n/a              |
+            +-------------------------+------------------------+------------------+
+            | pegasus.runtime         | WALLTIME               | -l h_rt          |
+            +-------------------------+------------------------+------------------+
+            | pegasus.memory          | TOTAL_MEMORY           | -l h_vmem        |
+            +-------------------------+------------------------+------------------+
+            | pegasus.project         | PROJECT                | n/a              |
+            +-------------------------+------------------------+------------------+
+            | pegasus.queue           | QUEUE                  | -q               |
+            +-------------------------+------------------------+------------------+
+            | pegasus.glite.arguments | EXTRA_ARGUMENTS        | prefixed by “#?” |
+            +-------------------------+------------------------+------------------+
+
+    .. tab:: Moab
+
+        .. table:: Mapping to MOAB directives
+
+            +-------------------------+------------------------+---------------------+
+            | Profile Key             | Key in                 | Moab Parameter      |
+            |                         | +remote_cerequirements |                     |
+            +-------------------------+------------------------+---------------------+
+            | pegasus.cores           | CORES                  | n/a                 |
+            +-------------------------+------------------------+---------------------+
+            | pegasus.nodes           | NODES                  | -l nodes            |
+            +-------------------------+------------------------+---------------------+
+            | pegasus.ppn             | PROCS                  | -l ppn              |
+            +-------------------------+------------------------+---------------------+
+            | pegasus.runtime         | WALLTIME               | -l walltime         |
+            +-------------------------+------------------------+---------------------+
+            | pegasus.memory          | TOTAL_MEMORY           |  -l mem             |
+            +-------------------------+------------------------+---------------------+
+            | pegasus.project         | PROJECT                | -A project_name     |
+            +-------------------------+------------------------+---------------------+
+            | pegasus.queue           | QUEUE                  | -q                  |
+            +-------------------------+------------------------+---------------------+
+            | pegasus.glite.arguments | EXTRA_ARGUMENTS        | prefixed by “#MSUB” |
+            +-------------------------+------------------------+---------------------+
+
+    .. tab:: Cobalt
+
+        .. table:: Mapping to Cobalt Directives
+
+            +-------------------------+------------------------+------------------+
+            | Profile Key             | Key in                 | Cobalt Parameter |
+            |                         | +remote_cerequirements |                  |
+            +-------------------------+------------------------+------------------+
+            | pegasus.cores           | CORES                  | –proccount cores |
+            +-------------------------+------------------------+------------------+
+            | pegasus.nodes           | NODES                  | -n nodes         |
+            +-------------------------+------------------------+------------------+
+            | pegasus.ppn             | PROCS                  | –mode c[ppn]     |
+            +-------------------------+------------------------+------------------+
+            | pegasus.runtime         | WALLTIME               | -t walltime      |
+            +-------------------------+------------------------+------------------+
+            | pegasus.memory          | PER_PROCESS_MEMORY     | n/a              |
+            +-------------------------+------------------------+------------------+
+            | pegasus.project         | PROJECT                | -A project_name  |
+            +-------------------------+------------------------+------------------+
+            | pegasus.queue           | QUEUE                  |                  |
+            +-------------------------+------------------------+------------------+
+            | globus.totalmemory      | TOTAL_MEMORY           | n/a              |
+            +-------------------------+------------------------+------------------+
+            | pegasus.glite.arguments | EXTRA_ARGUMENTS        | n/a              |
+            +-------------------------+------------------------+------------------+
+
+    .. tab:: Flux
+
+        .. table:: Mapping to Flux Directives
+
+            +-------------------------+------------------------+----------------------+
+            | Profile Key             | Key in                 | Flux Parameter       |
+            |                         | +remote_cerequirements |                      |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.cores           | CORES                  | --nslots,            |
+            |                         |                        | --nodes,             |
+            |                         |                        | and/or               |
+            |                         |                        | --cores-per-slot     |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.gpus            | GPUS                   | --gpus-per-slot      |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.nodes           | NODES                  | --nodes              |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.ppn             | PROCS                  | --nslots,            |
+            |                         |                        | --nodes,             |
+            |                         |                        | and/or               |
+            |                         |                        | --cores-per-slot     |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.runtime         | WALLTIME               | --time-limit         |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.memory          | PER_PROCESS_MEMORY     | Not supported        |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.project         | PROJECT                | --bank               |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.queue           | QUEUE                  | --queue              |
+            +-------------------------+------------------------+----------------------+
+            | globus.totalmemory      | TOTAL_MEMORY           | Not supported        |
+            +-------------------------+------------------------+----------------------+
+            | pegasus.glite.arguments | EXTRA_ARGUMENTS        | Prefixed by "#FLUX:" |
+            +-------------------------+------------------------+----------------------+
 
 Specifying a remote directory for the job
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -512,50 +726,50 @@ install.
 HPC Clusters - User Install
 ===========================
 
-In this deployment,
+In this deployment model, HTCondor and Pegasus are installed on the login node as
+a binary installation within user space (typically the `$HOME` directory). 
 
-* you install HTCondor and Pegasus on the **login node** as a binary install in
-  user space (usually the $HOME directory)
-* HTCondor daeamons run per user, and need to be launched once per user submitting the
-  workflows.
+* HTCondor daemons run on a per-user basis and must be launched by each user before submitting workflows.
+* This approach is ideal for environments where you do not have root/sudo access but need a functional workflow submission environment.
 
-First, install a "personal" HTCondor in your $HOME directory. Instructions can 
-be found `HTCondor user install documentation <https://htcondor.readthedocs.io/en/latest/getting-htcondor/install-linux-as-user.html>`_.
-Verify the install by running ``condor_q``:
+To simplify the deployment, use the `get-pegasus <https://github.com/pegasus-isi/get-pegasus>`_ helper tool.
+This script automatically detects your Linux distribution and version, then
+downloads and deploys the appropriate HTCondor and Pegasus binaries.
+
+Run the following command to begin:
 
 ::
 
+    $ curl -s https://raw.githubusercontent.com/pegasus-isi/get-pegasus/refs/heads/main/get_pegasus | python3
+
+..
+
+After the installation is complete, you will need to source the environment file to configure your shell:
+
+::
+
+    $ . <installation-directory>/env.sh
+
+..
+
+Once the environment is configured, start the HTCondor master daemon:
+
+::
+
+    $ condor_master
+
+..
+
+You can verify that the daemons are running and check the state of your queue with:
+
+::
+
+    $ condor_status
     $ condor_q
-    -- Schedd: azaphrael.org : <184.60.25.78:34585?... @ 11/11/20 14:44:06
-    OWNER BATCH_NAME      SUBMITTED   DONE   RUN    IDLE   HOLD  TOTAL JOB_IDS
-
-    Total for query: 0 jobs; 0 completed, 0 removed, 0 idle, 0 running, 0 held, 0 suspended
-    Total for all users: 0 jobs; 0 completed, 0 removed, 0 idle, 0 running, 0 held, 0 suspended
 
 ..
 
-Install Pegasus using the :ref:`tarballs`. Add the ``bin/`` directory to the ``$PATH``, and
-verify the install by running ``pegasus-version``. Example:
-
-::
-
-    $ export PATH=$HOME/pegasus/bin:$PATH
-    $ pegasus-version
-    5.1.0
-
-..
-
-Lastly, run the ``pegasus-configure-glite`` as described in the :ref:`glite` section above.
-
-To ensure that your environment is always consistent, it is recommended to add the following
-to your ``~/.bashrc``:
-
-::
-
-    . ~/condor/condor.sh
-    export PATH=$HOME/pegasus/bin:$PATH
-
-..
+If the HTCondor services stop or the node is rebooted, simply run `condor_master` again to resume operations.
 
 .. note::
 
@@ -753,10 +967,27 @@ on the *remote* system for the mapping of Pegasus profiles to local
 scheduler job requirements to work. In particular, you will need
 to install the ``slurm_local_submit_attributes.sh`` script
 (equivalent ones exist for PBS, SGE and LSF) in the correct place in the
-glite ``bin`` directory on the remote cluster, usually in the directory
-``~/bosco/glite/bin/`` . See :ref:`glite-mappings` for a full list
-of available attributes. An example of this file can be found in
-``/usr/share/pegasus/htcondor/glite/slurm_local_submit_attributes.sh``
+glite ``blahp etc`` directory on the remote cluster, usually in the directory
+``~/bosco/glite/etc/blahp/`` . See :ref:`glite-mappings` for a full list
+of available attributes.
+
+An example of this file can be found in the `SHARE` directory of your local
+pegasus install. To figure out the share directory run the following
+command.
+
+::
+
+    $ pegasus-config --sh-dump | grep -v export | grep SHARE
+
+
+It will write out the value of the directory. For example
+
+::
+
+    PEGASUS_SHARE_DIR="/path/to/install/pegasus/default/share/pegasus"
+
+
+The file is found at ``$PEGASUS_SHARE_DIR\htcondor/glite/slurm_local_submit_attributes.sh``
 
 
 Long Term SSH Connnection against 2FA Clusters (optional)
@@ -832,6 +1063,143 @@ An example site catalog entry for a BOSCO site looks like this:
 ..
 
 
+.. _nersc-perlmutter-sfapi:
+
+NERSC Perlmutter via SFAPI
+--------------------------
+
+The NERSC Superfacility API (SFAPI) integration allows you to submit Pegasus workflows
+directly to the `Perlmutter <https://docs.nersc.gov/systems/perlmutter/>`_ supercomputer at
+NERSC without an SSH tunnel or a shared filesystem between your submit host and Perlmutter.
+HTCondor communicates with Perlmutter through a BLAHP plugin that uses the SFAPI Python
+client to upload input files, submit Slurm jobs, poll status, download outputs, and cancel
+jobs — all over HTTPS.
+
+.. note::
+
+    For a full description of the BLAHP plugin internals, credential format, jobstate file
+    layout, and the ``sfapi_helpers.py`` CLI, see
+    :ref:`nersc-sfapi-submission` in the Reference Guide.
+
+Prerequisites
+~~~~~~~~~~~~~
+
+The following must be in place on your Pegasus submit host before planning a workflow
+to run on Perlmutter.
+
+**1. SFAPI credentials**
+
+Register an SFAPI client at `https://iris.nersc.gov <https://iris.nersc.gov>`_ with the
+Red security level that allows you to submit jobs for 2 days, then store the all credentials in:
+
+.. code-block:: text
+
+    ~/.superfacility/clientid.txt      # SFAPI client ID (plain text)
+    ~/.superfacility/priv_key.jwk      # RSA private key in JWK JSON format
+    ~/.superfacility/pub_key.jwk      # RSA public key in JWK JSON format
+
+When creating the client, ensure that one of the two IP's you mention is the workflow
+submit host, from where you are running the workflows. There is a convenient drop
+down option in the IP presets that allows you to select your IP.
+
+
+.. figure:: ../images/sfapi-token-iris.png
+   :alt: The distributed resources appear to be part of a HTCondor pool.
+   :width: 100.0%
+
+   The distributed resources appear to be part of a HTCondor pool.
+
+
+**2. Python virtual environment with** ``sfapi_client``
+
+.. code-block:: console
+
+    $ python3 -m venv ~/superfacility-env
+    $ source ~/superfacility-env/bin/activate
+    (superfacility-env) $ pip install sfapi_client
+
+The virtual environment must be at ``~/superfacility-env``. The HTCondor blahp bindings
+activate this enviornment when interacting with sfapi
+
+**3. Pegasus SFAPI BLAHP scripts**
+
+The scripts (``sfapi_submit.sh``, ``sfapi_status.sh``, ``sfapi_cancel.sh``,
+``sfapi_ping.sh``, ``sfapi_helpers.py``, ``sfapi_setup.sh``,
+``sfapi_local_submit_attributes.sh``) ship with Pegasus under
+``$PEGASUS_SHARE_DIR/htcondor/glite/`` need to be installed in the HTCondor
+blahp directory.
+
+Site Catalog
+~~~~~~~~~~~~
+
+Below is an annotated site catalog entry for Perlmutter. The key differences from a
+standard glite/BOSCO site are:
+
+- ``grids`` uses ``type: sfapi`` with ``contact: perlmutter`` (the NERSC resource name).
+- ``condor: grid_resource: batch sfapi`` routes HTCondor submissions through the SFAPI BLAHP
+  plugin.
+- ``pegasus: style: glite`` enables the glite job-wrapping mechanism.
+- Scratch and output directories live on the CFS community filesystem visible from
+  Perlmutter compute nodes.
+
+.. code-block:: yaml
+
+    pegasus: '5.0'
+    sites:
+    - name: perlmutter
+      directories:
+      - type: sharedScratch
+        path: /global/cfs/cdirs/<NERSC_PROJECT>/<NERSC_USERNAME>/wf-scratch
+        sharedFileSystem: false
+        fileServers:
+        - url: file:///global/cfs/cdirs/<NERSC_PROJECT>/<NERSC_USERNAME>/wf-scratch
+          operation: all
+      - type: localStorage
+        path: /global/cfs/cdirs/<NERSC_PROJECT>/<NERSC_USERNAME>/wf-outputs
+        sharedFileSystem: false
+        fileServers:
+        - url: file:///global/cfs/cdirs/<NERSC_PROJECT>/<NERSC_USERNAME>/wf-outputs
+          operation: all
+      grids:
+      - type: sfapi
+        contact: perlmutter
+        scheduler: slurm
+        jobtype: compute
+      profiles:
+        condor:
+          grid_resource: batch sfapi
+        env:
+          PEGASUS_HOME: /global/cfs/cdirs/<NERSC_PROJECT>/software/install/pegasus/default
+        pegasus:
+          style: glite
+          queue: debug           # Slurm partition (debug, regular, …)
+          project: <NERSC_PROJECT>
+          data.configuration: sharedfs
+          nodes: 1
+          cores: 1
+          runtime: 1800          # seconds
+          clusters.num: 2        # cluster jobs together to reduce queue overhead
+
+Replace ``<NERSC_PROJECT>`` and ``<NERSC_USERNAME>`` with your NERSC project ID and
+username respectively.
+
+The full list of supported Pegasus profiles and their ``#SBATCH`` mapping is described in
+:ref:`glite-mappings`.
+
+Troubleshooting
+~~~~~~~~~~~~~~~
+
+**SFAPI credential errors**
+    Verify that ``~/.superfacility/clientid.txt`` and ``~/.superfacility/priv_key.jwk``
+    exist, are readable only by the owner (``chmod 600``), and that the registered client
+    at `https://iris.nersc.gov <https://iris.nersc.gov>`_ has the ``compute:perlmutter``
+    and ``compute:dtns`` scopes.
+
+**Virtual environment not found**
+    ``sfapi_setup.sh`` will print an error message with installation instructions if
+    ``~/superfacility-env`` does not exist or does not contain ``sfapi_client``.
+
+
 .. _pyglidein:
 
 PyGlidein
@@ -846,7 +1214,7 @@ schedule jobs to local compute nodes.
 
 Some infrastructures, such as `Open Science Grid <http://www.opensciencegrid.org/>`__
 , provide infrastructure level glidein
-solutions, such as GlideinWMS. Another solution is `BOSCO <#bosco>`__.
+solutions, such as GlideinWMS. Another solution is :ref:`BOSCO <bosco>`.
 For some more custom setups,
 `pyglidein <https://github.com/WIPACrepo/pyglidein>`__ from the
 `IceCube <http://icecube.wisc.edu/>`__ project provides a nice
@@ -1157,7 +1525,7 @@ Let's tell BOSCO about our SDSC Comet account:
 BOSCO needs a little bit more information to be able to submit the
 glideins to Comet. Log in to your Comet account via ssh (important -
 this step has to take place on Comet) and create the
-*~/bosco/glite/bin/pbs_local_submit_attributes.sh* file with the
+*~/bosco/glite/etc/blahp/pbs_local_submit_attributes.sh* file with the
 following content. You can find your allocation by running
 *show_accounts* and looking at the project column.
 
@@ -1173,7 +1541,7 @@ Also chmod the file:
 
 ::
 
-   $ chmod 755 ~/bosco/glite/bin/pbs_local_submit_attributes.sh
+   $ chmod 755 ~/bosco/glite/etc/blahp/pbs_local_submit_attributes.sh
 
 
 Log out of Comet, and get back into the host and user BOSCO was
@@ -1227,9 +1595,12 @@ workflow.
 Cloud (AWS, Google, JetStream, ...)
 ========================================
 
+.. _concepts-fig-cloud-layout:
+
 .. figure:: ../images/fg-pwms-prefio.3.png
-   :name: concepts-fig-cloud-layout
    :align: center
+
+   Pegasus deployment across multiple clouds.
 
 This figure shows a sample environment for executing Pegasus across
 multiple clouds. At this point, it is up to the user to provision the
@@ -1243,7 +1614,7 @@ resource announcements, or is part of a larger HTCondor pool that
 collects these announcements. HTCondor makes the remote resources
 available to the submit host's HTCondor installation.
 
-The `figure above <#concepts-fig-cloud-layout>`__ shows the way Pegasus
+The :ref:`figure above <concepts-fig-cloud-layout>` shows the way Pegasus
 WMS is deployed in cloud computing resources, ignoring how these
 resources were provisioned. The provisioning request shows multiple
 resources per provisioning request.

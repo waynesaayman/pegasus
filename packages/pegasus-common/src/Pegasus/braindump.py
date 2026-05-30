@@ -45,6 +45,7 @@ class Braindump:
     """
 
     def __post_init__(self):
+        """Convert string path fields to :class:`pathlib.Path` and coerce ``uses_pmc`` to bool."""
         self.dax = Path(self.dax) if self.dax else self.dax
         self.basedir = Path(self.basedir) if self.basedir else self.basedir
         self.submit_dir = Path(self.submit_dir) if self.submit_dir else self.submit_dir
@@ -53,116 +54,116 @@ class Braindump:
         self.uses_pmc = None if self.uses_pmc is None else bool(self.uses_pmc)
 
     #: The username of the user that ran pegasus-plan
-    user: str = field(default=None)
+    user: Optional[str] = field(default=None)
 
     #: The Distinguished Name in the proxy
-    grid_dn: str = field(default=None)
+    grid_dn: Optional[str] = field(default=None)
 
     #: The hostname of the submit host
-    submit_hostname: str = field(default=None)  # type: str
+    submit_hostname: Optional[str] = field(default=None)
 
     #: The workflow uuid of the root workflow
-    root_wf_uuid: str = field(default=None)  # type: str
+    root_wf_uuid: Optional[str] = field(default=None)
 
     #: The workflow uuid of the current workflow i.e the one whose submit directory
     #: the braindump file is.
-    wf_uuid: str = field(default=None)  # type: str
+    wf_uuid: Optional[str] = field(default=None)
 
     #: The path to the dax file
-    dax: Path = field(default=None)  # type: Path
+    dax: Optional[Path] = field(default=None)
 
     #: The label attribute in the adag element of the dax
-    dax_label: str = field(default=None)  # type: str
+    dax_label: Optional[str] = field(default=None)
 
     #: The index in the dax.
-    dax_index: str = field(default=None)  # type: str
+    dax_index: Optional[str] = field(default=None)
 
     #: The version of the DAX schema that DAX referred to.
-    dax_version: str = field(default=None)  # type: str
+    dax_version: Optional[str] = field(default=None)
 
     #: The workflow name constructed by pegasus when planning
-    pegasus_wf_name: str = field(default=None)  # type: str
+    pegasus_wf_name: Optional[str] = field(default=None)
 
     #: The timestamp when planning occured
-    timestamp: str = field(default=None)  # type: str
+    timestamp: Optional[str] = field(default=None)
 
     #: The base submit directory
-    basedir: Path = field(default=None)  # type: Path
+    basedir: Optional[Path] = field(default=None)
 
     #: The full path for the submit directory
-    submit_dir: Path = field(default=None)  # type: Path
+    submit_dir: Optional[Path] = field(default=None)
 
     #: The planner used to construct the executable workflow. always pegasus
-    planner: Path = field(default=None)  # type: Path
+    planner: Optional[Path] = field(default=None)
 
     #: The versions of the planner
-    planner_version: str = field(default=None)  # type: str
+    planner_version: Optional[str] = field(default=None)
 
     #: The arguments with which the planner is invoked.
-    planner_arguments: str = field(default=None)  # type: str
+    planner_arguments: Optional[str] = field(default=None)
 
     #: The build timestamp
-    pegasus_build: str = field(default=None)  # type: str
+    pegasus_build: Optional[str] = field(default=None)
 
     #: The path to the jobstate file
-    jsd: str = field(default=None)  # type: str
+    jsd: Optional[str] = field(default=None)
 
     #: The rundir in the numbering scheme for the submit directories
-    rundir: str = field(default=None)  # type: str
+    rundir: Optional[str] = field(default=None)
 
     #: The bin directory of the pegasus installation
-    bindir: Path = field(default=None)  # type: Path
+    bindir: Optional[Path] = field(default=None)
 
     #: The vo group to which the user belongs to. Defaults to pegasus
-    vogroup: str = field(default=None)  # type: str
+    vogroup: Optional[str] = field(default=None)
 
     #: Whether the workflow uses PMC
-    uses_pmc: bool = field(default=None)  # type: Optional[bool]
+    uses_pmc: Optional[bool] = field(default=None)
 
     #: The full path to the properties file in the submit directory
-    properties: str = field(default=None)  # type: str
+    properties: Optional[str] = field(default=None)
 
     #: The full path to condor common log in the submit directory
-    condor_log: str = field(default=None)  # type: str
+    condor_log: Optional[str] = field(default=None)
 
     #: The basename of the dag file created
-    dag: str = field(default=None)  # type: str
+    dag: Optional[str] = field(default=None)
 
     #: The type of executable workflow. Can be dag | shell
-    type: str = field(default=None)  # type: str
+    type: Optional[str] = field(default=None)
 
     #: The notify file that contains any notifications that need to be sent
     #: for the workflow.
-    notify: str = field(default=None)  # type: str
+    notify: Optional[str] = field(default=None)
 
     #: Set in PMC mode.
-    script: str = field(default=None)  # type: str
+    script: Optional[str] = field(default=None)
+
+    #: The application this workflow belongs to
+    app: Optional[str] = field(default=None)
 
 
 def load(fp: TextIO, *args, **kwargs) -> Braindump:
     """
-    Deserialize ``fp`` (a ``.read()``-supporting file-like object containing a Braindump document) to a Python object.
+    Deserialize ``fp`` (a ``.read()``-supporting file-like object containing a Braindump document) to a :class:`Braindump` object.
 
-    [extended_summary]
-
-    :param fp: [description]
+    :param fp: readable file-like object containing a YAML-formatted braindump document
     :type fp: TextIO
-    :return: [description]
-    :rtype: Dict
+    :return: populated Braindump dataclass instance
+    :rtype: Braindump
     """
     return loads(fp.read())
 
 
 def loads(s: str, *args, **kwargs) -> Braindump:
     """
-    Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance containing a Braindump document) to a Python object.
+    Deserialize ``s`` (a ``str``, ``bytes``, or ``bytearray`` containing a Braindump document) to a :class:`Braindump` object.
 
-    [extended_summary]
-
-    :param s: [description]
+    :param s: YAML-formatted braindump string
     :type s: str
-    :return: [description]
-    :rtype: Dict
+    :return: populated Braindump dataclass instance
+    :rtype: Braindump
+    :raises ValueError: if ``s`` does not parse to a YAML mapping
     """
     _dict = yaml.load(s, *args, **kwargs)
 
@@ -174,29 +175,23 @@ def loads(s: str, *args, **kwargs) -> Braindump:
 
 def dump(obj: Braindump, fp: TextIO, *args, **kwargs) -> None:
     """
-    Serialize ``obj`` as a Braindump formatted stream to ``fp`` (a ``.write()``-supporting file-like object).
+    Serialize ``obj`` as a YAML-formatted braindump stream to ``fp`` (a ``.write()``-supporting file-like object).
 
-    [extended_summary]
-
-    :param obj: [description]
-    :type obj: Dict
-    :param fp: [description]
+    :param obj: Braindump instance to serialize
+    :type obj: Braindump
+    :param fp: writable file-like object to write the YAML output to
     :type fp: TextIO
-    :return: [description]
-    :rtype: NoReturn
     """
     yaml.dump(asdict(obj), fp, *args, **kwargs)
 
 
 def dumps(obj: Braindump, *args, **kwargs) -> str:
     """
-    Serialize ``obj`` to a Braindump formatted ``str``.
+    Serialize ``obj`` to a YAML-formatted braindump ``str``.
 
-    [extended_summary]
-
-    :param obj: [description]
-    :type obj: Dict
-    :return: [description]
+    :param obj: Braindump instance to serialize
+    :type obj: Braindump
+    :return: YAML-formatted braindump string
     :rtype: str
     """
     return yaml.dumps(asdict(obj), *args, **kwargs)

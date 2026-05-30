@@ -93,6 +93,7 @@ $defs:
           - unicore
           - ec2
           - deltacloud
+          - sfapi
       contact:
         type: string
       scheduler:
@@ -104,6 +105,7 @@ $defs:
           - condor
           - sge
           - slurm
+          - flux
           - unknown
       jobtype:
         type: string

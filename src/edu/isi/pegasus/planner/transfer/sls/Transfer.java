@@ -13,11 +13,15 @@
  */
 package edu.isi.pegasus.planner.transfer.sls;
 
+import static edu.isi.pegasus.planner.refiner.ReplicaCatalogBridge.CACHE_REPLICA_CATALOG_IMPLEMENTER;
+
 import edu.isi.pegasus.common.logging.LogManager;
 import edu.isi.pegasus.common.util.PegasusURL;
 import edu.isi.pegasus.common.util.Separator;
+import edu.isi.pegasus.planner.catalog.ReplicaCatalog;
 import edu.isi.pegasus.planner.catalog.TransformationCatalog;
 import edu.isi.pegasus.planner.catalog.replica.ReplicaCatalogEntry;
+import edu.isi.pegasus.planner.catalog.replica.ReplicaFactory;
 import edu.isi.pegasus.planner.catalog.site.classes.FileServer;
 import edu.isi.pegasus.planner.catalog.site.classes.FileServerType.OPERATION;
 import edu.isi.pegasus.planner.catalog.site.classes.SiteCatalogEntry;
@@ -25,17 +29,18 @@ import edu.isi.pegasus.planner.catalog.site.classes.SiteStore;
 import edu.isi.pegasus.planner.catalog.transformation.TransformationCatalogEntry;
 import edu.isi.pegasus.planner.catalog.transformation.classes.Container;
 import edu.isi.pegasus.planner.catalog.transformation.classes.TCType;
+import edu.isi.pegasus.planner.classes.DAXJob;
 import edu.isi.pegasus.planner.classes.FileTransfer;
 import edu.isi.pegasus.planner.classes.Job;
 import edu.isi.pegasus.planner.classes.PegasusBag;
 import edu.isi.pegasus.planner.classes.PegasusFile;
 import edu.isi.pegasus.planner.classes.PlannerCache;
-import edu.isi.pegasus.planner.classes.PlannerOptions;
 import edu.isi.pegasus.planner.classes.Profile;
 import edu.isi.pegasus.planner.common.PegasusProperties;
 import edu.isi.pegasus.planner.mapper.StagingMapper;
 import edu.isi.pegasus.planner.namespace.ENV;
 import edu.isi.pegasus.planner.namespace.Pegasus;
+import edu.isi.pegasus.planner.refiner.ReplicaCatalogBridge;
 import edu.isi.pegasus.planner.transfer.SLS;
 import java.io.File;
 import java.util.ArrayList;
@@ -43,6 +48,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 
 /**
@@ -125,7 +131,7 @@ public class Transfer implements SLS {
      */
     protected boolean mTransfersOnHostOS;
 
-    private PlannerOptions mPOptions;
+    protected PegasusBag mBag;
 
     /** The default constructor. */
     public Transfer() {}
@@ -135,9 +141,11 @@ public class Transfer implements SLS {
      *
      * @param bag the bag of objects. Contains access to catalogs etc.
      */
+    @Override
     public void initialize(PegasusBag bag) {
+        mBag = bag;
         mProps = bag.getPegasusProperties();
-        mPOptions = bag.getPlannerOptions();
+        bag.getPlannerOptions();
         mLogger = bag.getLogger();
         mSiteStore = bag.getHandleToSiteStore();
         mTCHandle = bag.getHandleToTransformationCatalog();
@@ -231,6 +239,7 @@ public class Transfer implements SLS {
      * @param job the job being detected.
      * @return true
      */
+    @Override
     public boolean needsSLSInputTransfers(Job job) {
         return true;
     }
@@ -242,6 +251,7 @@ public class Transfer implements SLS {
      * @param job the job being detected.
      * @return true
      */
+    @Override
     public boolean needsSLSOutputTransfers(Job job) {
         Set files = job.getOutputFiles();
         return !(files == null || files.isEmpty());
@@ -272,6 +282,138 @@ public class Transfer implements SLS {
     }
 
     /**
+     * Generates a second level staging file of the input files to the worker node directory for DAX
+     * / pegasusWorkflow jobs. The only files that are considered are those that have forPlanning
+     * flag set to true.
+     *
+     * @param job job for which the file is being created
+     * @param fileName name of the file that needs to be written out.
+     * @param stagingSiteServer the file server on the staging site to be used for retrieval of
+     *     files i.e the get operation
+     * @param stagingSiteDirectory directory on the head node of the staging site.
+     * @param workerNodeDirectory worker node directory
+     * @param onlyContainer boolean indicating if sls inputs should be generated only for container
+     *     files associated with the job.
+     * @return a Collection of FileTransfer objects listing the transfers that need to be done.
+     * @see #needsSLSInputTransfers( Job)
+     */
+    public Collection<FileTransfer> determineSLSInputTransfers(
+            DAXJob job,
+            String fileName,
+            FileServer stagingSiteServer,
+            String stagingSiteDirectory,
+            String workerNodeDirectory,
+            boolean onlyContainer) {
+
+        Collection<FileTransfer> result = new LinkedList();
+        String destDir = workerNodeDirectory;
+
+        // for pegasusWorkflow job that is being set to run via
+        // PegasusLite there is no container involved
+        if (onlyContainer) {
+            return result;
+        }
+
+        if (job.getContainer() != null) {
+            // dax job can never run in a container
+            throw new RuntimeException(
+                    "The pegasusWorkflow job"
+                            + " "
+                            + job.getID()
+                            + " "
+                            + "incorrectly set to run via container -"
+                            + " "
+                            + job.getContainer());
+        }
+
+        if (job.getInputFiles().isEmpty()) {
+            return result;
+        }
+
+        String cacheFile = job.getInputWorkflowCacheFile();
+
+        // GH-2179 input.cache file contains all the locations of
+        // files that a parent compute job might have generated for the
+        // pegasusWorkflow job
+        ReplicaCatalog simpleFile = loadInputWorkflowCacheFile(job, cacheFile);
+
+        try {
+            String stagingSite = job.getStagingSiteHandle();
+            String computeSite = job.getSiteHandle();
+            SiteCatalogEntry computeSiteEntry = this.mSiteStore.lookup(computeSite);
+
+            for (PegasusFile pf : job.getInputFiles()) {
+                String lfn = pf.getLFN();
+
+                // all input files for pegasusWorkflow job that are generated
+                // by parent compute jobs appear in the input.cache file for the job
+                Collection<ReplicaCatalogEntry> sources = simpleFile.lookup(lfn);
+
+                if (sources.isEmpty()) {
+                    // check if bypass staing is turned on for this file
+                    if (pf.doBypassStaging()) {
+                        sources = this.retrieveBypassedLocation(job, pf, computeSite);
+                    }
+                }
+
+                if (sources.isEmpty()) {
+                    // if not available in input.cache and also bypass is false for
+                    // the file then we revert to creating the location
+                    // w.r.t staging site
+                    boolean useFileURLAsSource =
+                            this.useFileURLAsSource(computeSiteEntry, stagingSite);
+                    StringBuilder url = new StringBuilder();
+                    if (useFileURLAsSource) {
+                        // construct the source URL as a file url
+                        url.append(PegasusURL.FILE_URL_SCHEME)
+                                .append("//")
+                                .append(stagingSiteDirectory);
+                        mLogger.log(
+                                "Using file url for lfn " + lfn + " " + url,
+                                LogManager.TRACE_MESSAGE_LEVEL);
+
+                    } else {
+                        url.append(
+                                mSiteStore.getExternalWorkDirectoryURL(
+                                        stagingSiteServer, stagingSite));
+                    }
+
+                    // PM-833 append the relative staging site add on directory
+                    url.append(File.separator)
+                            .append(mStagingMapper.getRelativeDirectory(stagingSite, lfn));
+
+                    url.append(File.separator).append(lfn);
+                    sources.add(new ReplicaCatalogEntry(url.toString(), stagingSite));
+                }
+
+                FileTransfer ft = new FileTransfer();
+
+                for (ReplicaCatalogEntry rce : sources) {
+                    ft.addSource(rce);
+                }
+                String destURLScheme = PegasusURL.FILE_URL_SCHEME; // default is file URL
+
+                // destination
+                StringBuilder url = new StringBuilder();
+                url.append(destURLScheme)
+                        .append("//")
+                        .append(destDir)
+                        .append(File.separator)
+                        .append(pf.getLFN());
+                ft.addDestination(job.getSiteHandle(), url.toString());
+
+                result.add(ft);
+            }
+        } finally {
+            if (simpleFile != null) {
+                simpleFile.close();
+            }
+        }
+
+        return result;
+    }
+
+    /**
      * Generates a second level staging file of the input files to the worker node directory.
      *
      * @param job job for which the file is being created
@@ -280,15 +422,19 @@ public class Transfer implements SLS {
      *     files i.e the get operation
      * @param stagingSiteDirectory directory on the head node of the staging site.
      * @param workerNodeDirectory worker node directory
+     * @param onlyContainer boolean indicating if sls inputs should be generated only for container
+     *     files associated with the job.
      * @return a Collection of FileTransfer objects listing the transfers that need to be done.
      * @see #needsSLSInputTransfers( Job)
      */
+    @Override
     public Collection<FileTransfer> determineSLSInputTransfers(
             Job job,
             String fileName,
             FileServer stagingSiteServer,
             String stagingSiteDirectory,
-            String workerNodeDirectory) {
+            String workerNodeDirectory,
+            boolean onlyContainer) {
 
         // sanity check
         if (!needsSLSInputTransfers(job)) {
@@ -297,6 +443,21 @@ public class Transfer implements SLS {
                     LogManager.DEBUG_MESSAGE_LEVEL);
             return null;
         }
+
+        // GH-2179  PM-1898 special handling for dax jobs
+        if (job instanceof DAXJob) {
+            return this.determineSLSInputTransfers(
+                    (DAXJob) job,
+                    fileName,
+                    stagingSiteServer,
+                    stagingSiteDirectory,
+                    workerNodeDirectory,
+                    onlyContainer);
+        }
+
+        // GH-2105 PM-1875 we escape variable if job run in container AND
+        // data tx is inside the container
+        boolean escapeEnvVariable = (job.getContainer() != null && !this.mTransfersOnHostOS);
 
         boolean symlinkingEnabledForJob = Transfer.this.symlinkingEnabled(job, this.mUseSymLinks);
         Set files = job.getInputFiles();
@@ -333,6 +494,14 @@ public class Transfer implements SLS {
         for (Iterator it = files.iterator(); it.hasNext(); ) {
             PegasusFile pf = (PegasusFile) it.next();
             String lfn = pf.getLFN();
+            boolean isContainerLFN = containerLFN != null && lfn.equals(containerLFN);
+
+            // GH-2141 determine based on onlyContainer flag if we
+            // have to consider normal input files or not.
+            if (onlyContainer && !pf.isContainerFile()) {
+                // all inputs other than the container file should be skipped
+                continue;
+            }
 
             if (lfn.equals(ENV.X509_USER_PROXY_KEY)) {
                 // ignore the proxy file for time being
@@ -340,7 +509,7 @@ public class Transfer implements SLS {
                 continue;
             }
 
-            if (jobRunsInContainerUniverse && lfn.equals(containerLFN)) {
+            if (jobRunsInContainerUniverse && isContainerLFN) {
                 // PM-1950 we dont add to transfer_input_files
                 // it will be picked from container_image. but make sure no
                 // transfer is triggered in PegasusLite script
@@ -361,24 +530,22 @@ public class Transfer implements SLS {
             Collection<ReplicaCatalogEntry> sources = new LinkedList();
             boolean symlink = false;
             if (pf.doBypassStaging()) {
-                // PM-698
-                // we retrieve the URL from the Planner Cache as a get URL
-                // bypassed URL's are stored as GET urls in the cache and
-                // associated with the compute site
-
-                // PM 1002 first we try and find a tighter match on the compute site
-                // and then the loose match
-                cacheLocations = mPlannerCache.lookupAllEntries(lfn, computeSite, OPERATION.get);
-                if (cacheLocations.isEmpty()) {
-                    mLogger.log(
-                            constructMessage(
-                                    job,
-                                    lfn,
-                                    "Unable to find location of lfn in planner(get) cache with input staging bypassed"),
-                            LogManager.WARNING_MESSAGE_LEVEL);
+                sources = this.retrieveBypassedLocation(job, pf, computeSite);
+                // update the symlink flag for the bypass case
+                for (ReplicaCatalogEntry rce : sources) {
+                    symlink =
+                            this.symlinkingEnabled(
+                                    pf,
+                                    symlinkingEnabledForJob,
+                                    // source URL logically on the same site where job is to be run
+                                    // AND
+                                    // source URL is a file URL
+                                    rce.getResourceHandle().equals(job.getSiteHandle())
+                                            && rce.getPFN().startsWith(PegasusURL.FILE_URL_SCHEME));
                 }
             }
-            if (cacheLocations == null || cacheLocations.isEmpty()) {
+            // if (cacheLocations == null || cacheLocations.isEmpty()) {
+            if (sources.isEmpty()) {
                 String stagingSite = job.getStagingSiteHandle();
 
                 // PM-1787 PM-1789 the source URL can be a file URL if source URL logically on the
@@ -419,27 +586,6 @@ public class Transfer implements SLS {
 
                 // ft.addSource( stagingSite, url.toString() );
                 sources.add(new ReplicaCatalogEntry(url.toString(), stagingSite));
-            } else {
-                // construct the URL wrt to the planner cache location
-                // PM-1014 go through all the candidates returned from the planner cache
-                for (ReplicaCatalogEntry cacheLocation : cacheLocations) {
-                    url = new StringBuffer();
-                    url.append(cacheLocation.getPFN());
-
-                    // ft.addSource(cacheLocation);
-                    sources.add((ReplicaCatalogEntry) cacheLocation.clone());
-
-                    symlink =
-                            this.symlinkingEnabled(
-                                    pf,
-                                    symlinkingEnabledForJob,
-                                    // source URL logically on the same site where job is to be run
-                                    // AND
-                                    // source URL is a file URL
-                                    cacheLocation.getResourceHandle().equals(job.getSiteHandle())
-                                            && url.toString()
-                                                    .startsWith(PegasusURL.FILE_URL_SCHEME));
-                }
             }
 
             if (containerLFN != null) {
@@ -449,7 +595,7 @@ public class Transfer implements SLS {
                     symlink =
                             symlinkingEnabled(
                                     c, pf, sources, job.getID(), jobRunsInContainerUniverse);
-                    if (symlink && !lfn.equals(containerLFN) && this.mTransfersOnHostOS) {
+                    if (symlink && !isContainerLFN && this.mTransfersOnHostOS) {
                         // we don't want pegasus-transfer to fail in PegasusLite
                         // on the missing source path that is only visible in the container
                         // GH-2104 we only set it to false if transfers are happening on the HOST OS
@@ -460,7 +606,7 @@ public class Transfer implements SLS {
                     // PM-1893 when job is launched inside a container, we
                     // want to make sure the file URL's are mounted correctly
                     // for files other than the container image itself
-                    if (!pf.getLFN().equals(containerLFN)) {
+                    if (!isContainerLFN) {
                         for (ReplicaCatalogEntry source : sources) {
                             updateSourceFileURLForContainerizedJob(c, pf, source, job.getID());
                         }
@@ -469,7 +615,40 @@ public class Transfer implements SLS {
             }
 
             // add all the sources
+            boolean rewriteOSDFURL = false;
             for (ReplicaCatalogEntry source : sources) {
+                // at this point we know all the sources whether the file
+                // is being retrieved directly or from the staging site.
+                String sourceURL = source.getPFN();
+                if (sourceURL.startsWith(PegasusURL.OSDF_PROTOCOL_SCHEME)) {
+                    rewriteOSDFURL =
+                            (isContainerLFN && onlyContainer)
+                                    // GH-2141 rewrite containerLFN only when onlyContainer is true,
+                                    // as else container file can appear twice in transfer_ip_files
+                                    || !isContainerLFN;
+                    if (rewriteOSDFURL) {
+                        // GH-2141 add the url as a job input file via condor file io
+                        // that will get the file to the condor scratch dir
+                        job.condorVariables.addIPFileForTransfer(sourceURL);
+                        // now update the source url to reflect pegasus_lite_start_dir
+                        // however the lfn is the basename of the source url. not
+                        // the actual lfn for the file. this is to account for
+                        // mistmatch in the URL basename in replica catalog and the
+                        // lfn for the file in the job.
+                        // For example lfn association with the job can f.a . the url
+                        // can be osdf:///pelicanplatform/test/hello-world.txt
+                        // so condor will transfer file to hello-world.txt in pegasus_lite_start_dir
+                        String path = new PegasusURL(sourceURL).getPath();
+
+                        source.setPFN(
+                                urlFromPegasusLiteStartDir(
+                                        PegasusURL.FILE_URL_SCHEME,
+                                        new File(path).getName(),
+                                        escapeEnvVariable));
+                        source.setResourceHandle(computeSite);
+                    }
+                }
+
                 ft.addSource(source);
             }
 
@@ -479,6 +658,10 @@ public class Transfer implements SLS {
                     (symlink)
                             ? PegasusURL.SYMLINK_URL_SCHEME
                             : PegasusURL.FILE_URL_SCHEME; // default is file URL
+
+            if (rewriteOSDFURL) {
+                destURLScheme = PegasusURL.MOVETO_PROTOCOL_SCHEME;
+            }
 
             // PM-1375 check the dial to see if we need to check checksum for this
             // or not, and turn off if nosymlink
@@ -512,6 +695,7 @@ public class Transfer implements SLS {
      * @return a Collection of FileTransfer objects listing the transfers that need to be done.
      * @see #needsSLSOutputTransfers( Job)
      */
+    @Override
     public Collection<FileTransfer> determineSLSOutputTransfers(
             Job job,
             String fileName,
@@ -526,6 +710,10 @@ public class Transfer implements SLS {
                     LogManager.DEBUG_MESSAGE_LEVEL);
             return null;
         }
+
+        // GH-2105 PM-1875 we escape variable if job run in container AND
+        // data tx is inside the container
+        boolean escapeEnvVariable = (job.getContainer() != null && !this.mTransfersOnHostOS);
 
         //      To handle for null conditions?
         //        File sls = null;
@@ -590,9 +778,21 @@ public class Transfer implements SLS {
             url.append(File.separator)
                     .append(mStagingMapper.getRelativeDirectory(stagingSite, lfn));
             url.append(File.separator).append(lfn);
+            String stagingSiteURL = url.toString();
+            if (stagingSiteURL.startsWith(PegasusURL.OSDF_PROTOCOL_SCHEME)) {
+                // GH-2141 for osdf urls we do output remap and not
+                // push it via pegasus-transfer to the staging site
+                job.condorVariables.addOPFileForTransferRemap(lfn, stagingSiteURL);
+                // however we still need to move the file back to $pegasus_lite_start_dir for
+                // condor to pick up and push it to OSDF
+                ft.addDestination(
+                        job.getSiteHandle(),
+                        urlFromPegasusLiteStartDir(
+                                PegasusURL.MOVETO_PROTOCOL_SCHEME, lfn, escapeEnvVariable));
 
-            ft.addDestination(stagingSite, url.toString());
-
+            } else {
+                ft.addDestination(stagingSite, url.toString());
+            }
             result.add(ft);
         }
 
@@ -824,6 +1024,7 @@ public class Transfer implements SLS {
      *
      * @return a short textual description
      */
+    @Override
     public String getDescription() {
         return "SLS backend using pegasus-transfer to worker node";
     }
@@ -894,6 +1095,68 @@ public class Transfer implements SLS {
         return (stagingSite.equals(computeSiteEntry.getSiteHandle())
                         && computeSiteEntry.hasSharedFileSystem())
                 || (stagingSite.equals("local") && computeSiteEntry.isVisibleToLocalSite());
+    }
+
+    protected Collection<ReplicaCatalogEntry> retrieveBypassedLocation(
+            Job job, PegasusFile pf, String computeSite) {
+        Collection<ReplicaCatalogEntry> sources = new LinkedList();
+        Collection<ReplicaCatalogEntry> cacheLocations = null;
+        String lfn = pf.getLFN();
+
+        // sanity check
+        if (!pf.doBypassStaging()) {
+            throw new RuntimeException(
+                    constructMessage(
+                            job,
+                            lfn,
+                            "Bypass flag not set, but trying to retrieve bypassed location"));
+        }
+
+        // PM-698
+        // we retrieve the URL from the Planner Cache as a get URL
+        // bypassed URL's are stored as GET urls in the cache and
+        // associated with the compute site
+
+        // PM 1002 first we try and find a tighter match on the compute site
+        // and then the loose match
+        cacheLocations = mPlannerCache.lookupAllEntries(lfn, computeSite, OPERATION.get);
+        if (cacheLocations.isEmpty()) {
+            mLogger.log(
+                    constructMessage(
+                            job,
+                            lfn,
+                            "Unable to find location of lfn in planner(get) cache with input staging bypassed"),
+                    LogManager.WARNING_MESSAGE_LEVEL);
+        }
+
+        if (cacheLocations.isEmpty()) {
+            // return an empty list
+            return sources;
+        }
+
+        // construct the URL wrt to the planner cache location
+        // PM-1014 go through all the candidates returned from the planner cache
+        for (ReplicaCatalogEntry cacheLocation : cacheLocations) {
+            StringBuilder url = new StringBuilder();
+            url.append(cacheLocation.getPFN());
+
+            // ft.addSource(cacheLocation);
+            sources.add((ReplicaCatalogEntry) cacheLocation.clone());
+            /*
+            symlink =
+                    this.symlinkingEnabled(
+                            pf,
+                            symlinkingEnabledForJob,
+                            // source URL logically on the same site where job is to be run
+                            // AND
+                            // source URL is a file URL
+                            cacheLocation.getResourceHandle().equals(job.getSiteHandle())
+                                    && url.toString()
+                                            .startsWith(PegasusURL.FILE_URL_SCHEME));
+            */
+        }
+
+        return sources;
     }
 
     /**
@@ -1029,5 +1292,70 @@ public class Transfer implements SLS {
         }
         sb.append(" ").append(message);
         return sb.toString();
+    }
+
+    /**
+     * Constructs a URL for a file from directory where condor starts the job that is captured in
+     * bash variable pegasus_lite_start_dir.
+     *
+     * @param urlScheme url scheme to use for creating the new URL
+     * @param lfn
+     * @param escapeEnvVariable
+     * @return file url to that location
+     */
+    private String urlFromPegasusLiteStartDir(
+            String urlScheme, String lfn, boolean escapeEnvVariable) {
+        StringBuilder replacedURL = new StringBuilder();
+        replacedURL.append(urlScheme).append("//");
+        if (escapeEnvVariable) {
+            // PM-1875 when a job is run through a container, then data stage-in
+            // happens inside the container. so we need to ensure
+            // the variable does not expanded on the host OS where pegasuslite
+            // script runs
+            replacedURL.append("\\");
+        }
+        replacedURL
+                .append("$pegasus_lite_start_dir")
+                .append(File.separator)
+                .append(new File(lfn).getName());
+
+        return replacedURL.toString();
+    }
+
+    /**
+     * Loads a replica catalog back end from the cache file
+     *
+     * @param job
+     * @param cacheFile
+     * @return
+     */
+    private ReplicaCatalog loadInputWorkflowCacheFile(DAXJob job, String cacheFile) {
+        if (cacheFile == null) {
+            throw new RuntimeException(
+                    "The pegasusWorkflow job"
+                            + " "
+                            + job.getID()
+                            + " "
+                            + "is not associated with a cache file");
+        }
+
+        Properties cacheProps = new Properties();
+        // all cache files are loaded in readonly mode
+        cacheProps.setProperty(ReplicaCatalogBridge.CACHE_READ_ONLY_KEY, "true");
+        // set the appropriate property to designate path to file
+        cacheProps.setProperty(ReplicaCatalogBridge.CACHE_REPLICA_CATALOG_KEY, cacheFile);
+        mLogger.log(
+                "Loading sub workflow input cache file: " + cacheFile,
+                LogManager.DEBUG_MESSAGE_LEVEL);
+        ReplicaCatalog simpleFile = null;
+        try {
+            simpleFile =
+                    ReplicaFactory.loadInstance(
+                            CACHE_REPLICA_CATALOG_IMPLEMENTER, this.mBag, cacheProps);
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "For job " + job.getID() + " unable to load workflow cache file " + cacheFile);
+        }
+        return simpleFile;
     }
 }

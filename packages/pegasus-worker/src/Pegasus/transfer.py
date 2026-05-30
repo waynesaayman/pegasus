@@ -482,8 +482,8 @@ class TransferHandlerBase:
     protocol map (for example ["http->file"]) and implement the following
     methods:
       do_mkdirs()
-      do_transfer()
-      do_removes)_
+      do_transfers()
+      do_removes()
     """
 
     _name = "BaseHandler"
@@ -2235,7 +2235,7 @@ class GlobusOnlineHandler(TransferHandlerBase):
             "transfer_at": cred_details["transfer_at"],
             "transfer_rt": cred_details["transfer_rt"],
             "transfer_at_exp": cred_details["transfer_at_exp"],
-            "files": list(),
+            "files": [],
         }
 
         for t in mkdir_l:
@@ -2295,7 +2295,7 @@ class GlobusOnlineHandler(TransferHandlerBase):
             "transfer_at": cred_details["transfer_at"],
             "transfer_rt": cred_details["transfer_rt"],
             "transfer_at_exp": cred_details["transfer_at_exp"],
-            "files": list(),
+            "files": [],
         }
 
         for t in transfers_l:
@@ -2352,7 +2352,7 @@ class GlobusOnlineHandler(TransferHandlerBase):
             "transfer_rt": cred_details["transfer_rt"],
             "transfer_at_exp": cred_details["transfer_at_exp"],
             "recursive": removes_l[0].get_recursive(),
-            "files": list(),
+            "files": [],
         }
 
         for t in removes_l:
@@ -2625,7 +2625,7 @@ class GSHandler(TransferHandlerBase):
         except Exception:
             raise RuntimeError("Unable to create tmp file for gs boto file")
         try:
-            conf = configparser.SafeConfigParser()
+            conf = configparser.ConfigParser()
             conf.read(env["BOTO_CONFIG"])
             conf.set("Credentials", "gs_service_key_file", env["GOOGLE_PKCS12"])
             conf.write(tmp_file)

@@ -87,6 +87,9 @@ public class PegasusProperties implements Cloneable {
 
     public static final String PEGASUS_SITE_CATALOG_FILE_PROPERTY = "pegasus.catalog.site.file";
 
+    public static final String PEGASUS_SITE_CATALOG_BASE_REPO_URL_PROPERTY =
+            "pegasus.catalog.site.repo";
+
     public static final String PEGASUS_LOG_METRICS_PROPERTY = "pegasus.log.metrics";
 
     public static final String PEGASUS_LOG_METRICS_PROPERTY_FILE = "pegasus.log.metrics.file";
@@ -188,6 +191,9 @@ public class PegasusProperties implements Cloneable {
 
     /** the default value in MB for the size of documents that can be parsed * */
     private static final String DEFAULT_DOCUMENT_PARSER_SIZE = "500";
+
+    /** the maximum permissible value in MB for the size of documents that can be parsed * */
+    private static final int MAX_YAML_DOCUMENT_PARSER_SIZE = Integer.MAX_VALUE / 1024 / 1024;
 
     /**
      * the maximum number of jobs in the executable wf on which the condor dag checker is invoked *
@@ -999,6 +1005,22 @@ public class PegasusProperties implements Cloneable {
     public String getSiteCatalogImplementor() {
         return mProps.getProperty(PegasusProperties.PEGASUS_SITE_CATALOG_PROPERTY);
     }
+
+    /**
+     * Returns the Github repository from where to download the site catalogs from.
+     *
+     * <p>Referred to by the "pegasus.catalog.site.repo" property.
+     *
+     * @return the download url from where to download the file, else NULL
+     * @see #PEGASUS_SITE_CATALOG_BASE_REPO_URL_PROPERTY
+     */
+    public String getBaseURLForSiteCatalogRepository() {
+        return mProps.getProperty(PegasusProperties.PEGASUS_SITE_CATALOG_BASE_REPO_URL_PROPERTY);
+    }
+
+    // other properties picked up in SiteFactory
+    // pegasus.catalog.site.repo.file
+    // pegasus.catalog.site.repo.interval
 
     /**
      * Returns the location of the schema for the DAX.
@@ -2069,6 +2091,17 @@ public class PegasusProperties implements Cloneable {
         int val;
         try {
             val = Integer.parseInt(prop);
+
+            // -ve value is also default
+            if (val < 0) {
+                val = Integer.parseInt(DEFAULT_DOCUMENT_PARSER_SIZE);
+            }
+
+            // GH-2152 default to 2GB as that is all is supported
+            val =
+                    val > PegasusProperties.MAX_YAML_DOCUMENT_PARSER_SIZE
+                            ? PegasusProperties.MAX_YAML_DOCUMENT_PARSER_SIZE
+                            : val;
         } catch (Exception e) {
             return Integer.parseInt(DEFAULT_DOCUMENT_PARSER_SIZE);
         }

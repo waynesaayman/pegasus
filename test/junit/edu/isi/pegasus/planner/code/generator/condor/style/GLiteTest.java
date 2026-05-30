@@ -15,14 +15,19 @@
  */
 package edu.isi.pegasus.planner.code.generator.condor.style;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import edu.isi.pegasus.common.logging.LogManager;
 import edu.isi.pegasus.common.logging.LogManagerFactory;
 import edu.isi.pegasus.planner.classes.Job;
 import edu.isi.pegasus.planner.classes.PegasusBag;
+import edu.isi.pegasus.planner.code.generator.condor.ClassADSGenerator;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyleException;
 import edu.isi.pegasus.planner.common.PegasusProperties;
+import edu.isi.pegasus.planner.namespace.Globus;
 import edu.isi.pegasus.planner.namespace.Pegasus;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,32 +61,32 @@ public class GLiteTest {
 
     @Test
     public void testBasicPBSTimestampFormatting() {
-        assertEquals("00:00:00", gs.pbsFormattedTimestamp("0"));
+        assertThat(gs.pbsFormattedTimestamp("0"), is("00:00:00"));
     }
 
     @Test
     public void testMinutePBSTimestampFormatting() {
-        assertEquals("00:11:00", gs.pbsFormattedTimestamp("11"));
+        assertThat(gs.pbsFormattedTimestamp("11"), is("00:11:00"));
     }
 
     @Test
     public void testHourConversionPBSTimestampFormatting() {
-        assertEquals("01:00:00", gs.pbsFormattedTimestamp("60"));
+        assertThat(gs.pbsFormattedTimestamp("60"), is("01:00:00"));
     }
 
     @Test
     public void test2HourConversionPBSTimestampFormatting() {
-        assertEquals("01:09:00", gs.pbsFormattedTimestamp("69"));
+        assertThat(gs.pbsFormattedTimestamp("69"), is("01:09:00"));
     }
 
     @Test
     public void test3HourConversionPBSTimestampFormatting() {
-        assertEquals("02:49:00", gs.pbsFormattedTimestamp("169"));
+        assertThat(gs.pbsFormattedTimestamp("169"), is("02:49:00"));
     }
 
     @Test
     public void test4HourConversionPBSTimestampFormatting() {
-        assertEquals("28:10:00", gs.pbsFormattedTimestamp("1690"));
+        assertThat(gs.pbsFormattedTimestamp("1690"), is("28:10:00"));
     }
 
     @Test
@@ -95,17 +100,23 @@ public class GLiteTest {
     public void testPegasusGPUS() throws CondorStyleException {
         Job j = new Job();
         j.vdsNS.construct(Pegasus.GPUS_KEY, "5");
-        this.testWithRegex(j, DEFAULT_GRID_RESOURCE, ".*GPUS==\"([0-9]*)\".*", "5");
+
+        // this.testWithRegex(j, DEFAULT_GRID_RESOURCE, ".*GPUS==\"([0-9]*)\".*", "5");
+        this.testWithPegasusClassADSVariables(
+                j, DEFAULT_GRID_RESOURCE, Pegasus.GPUS_KEY, "GPUS", "5");
     }
 
     @Test
     public void testPegasusProfileMemory() throws CondorStyleException {
         Job j = new Job();
         j.vdsNS.construct(Pegasus.MEMORY_KEY, "50");
-        this.testWithRegex(j, DEFAULT_GRID_RESOURCE, ".*PER_PROCESS_MEMORY==\"([0-9]*)\".*", "50");
+        // this.testWithRegex(j, DEFAULT_GRID_RESOURCE, ".*PER_PROCESS_MEMORY==\"([0-9]*)\".*",
+        // "50");
+        this.testWithPegasusClassADSVariables(
+                j, DEFAULT_GRID_RESOURCE, Pegasus.MEMORY_KEY, "TOTAL_MEMORY", "50");
     }
 
-    @Test
+    // disable for GH-2175 @Test
     public void testPegasusProfileMAXWalltime() throws CondorStyleException {
         Job j = new Job();
         j.vdsNS.construct(Pegasus.RUNTIME_KEY, "100");
@@ -143,7 +154,10 @@ public class GLiteTest {
     public void testSGEPegasusProfileCores() throws CondorStyleException {
         Job j = new Job();
         j.vdsNS.construct(Pegasus.CORES_KEY, "5");
-        this.testWithRegex(j, "sge", ".*CORES==\"([0-9]*)\".*", "5");
+
+        // this.testWithRegex(j, "sge", ".*CORES==\"([0-9]*)\".*", "5");
+        this.testWithPegasusClassADSVariables(
+                j, GLite.SGE_GRID_RESOURCE, Pegasus.CORES_KEY, "CORES", "5");
     }
 
     // test SGE complex combinations
@@ -170,7 +184,10 @@ public class GLiteTest {
         Job j = new Job();
         j.vdsNS.construct(Pegasus.PPN_KEY, "8");
         j.vdsNS.construct(Pegasus.NODES_KEY, "5");
-        this.testWithRegex(j, GLite.SGE_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "40");
+
+        // this.testWithRegex(j, GLite.SGE_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "40");
+        this.testWithPegasusClassADSVariables(
+                j, GLite.SGE_GRID_RESOURCE, Pegasus.CORES_KEY, "CORES", "40");
     }
 
     // test PBS complex combinations
@@ -202,7 +219,10 @@ public class GLiteTest {
         j.vdsNS.construct(Pegasus.NODES_KEY, "5");
         this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*NODES==\"([0-9]*)\".*", "5");
         this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*PROCS==\"([0-9]*)\".*", "8");
-        this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "40");
+
+        // this.testWithRegex(j, , ".*CORES==\"([0-9]*)\".*", "40");
+        this.testWithPegasusClassADSVariables(
+                j, GLite.PBS_GRID_RESOURCE, Pegasus.CORES_KEY, "CORES", "40");
     }
 
     @Test
@@ -234,7 +254,10 @@ public class GLiteTest {
         j.vdsNS.construct(Pegasus.PPN_KEY, "8");
         this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*NODES==\"([0-9]*)\".*", "5");
         this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*PROCS==\"([0-9]*)\".*", "8");
-        this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "40");
+
+        // this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "40");
+        this.testWithPegasusClassADSVariables(
+                j, GLite.PBS_GRID_RESOURCE, Pegasus.CORES_KEY, "CORES", "40");
     }
 
     @Test
@@ -261,9 +284,13 @@ public class GLiteTest {
         j.vdsNS.construct(Pegasus.CORES_KEY, "40");
         j.vdsNS.construct(Pegasus.NODES_KEY, "5");
         j.vdsNS.construct(Pegasus.PPN_KEY, "8");
+
         this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*NODES==\"([0-9]*)\".*", "5");
         this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*PROCS==\"([0-9]*)\".*", "8");
-        this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "40");
+
+        // this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "40");
+        this.testWithPegasusClassADSVariables(
+                j, GLite.PBS_GRID_RESOURCE, Pegasus.CORES_KEY, "CORES", "40");
     }
 
     @Test
@@ -297,7 +324,49 @@ public class GLiteTest {
         j.vdsNS.construct(Pegasus.PPN_KEY, "1");
         this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*NODES==\"([0-9]*)\".*", "1");
         this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*PROCS==\"([0-9]*)\".*", "1");
-        this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "1");
+
+        // this.testWithRegex(j, GLite.PBS_GRID_RESOURCE, ".*CORES==\"([0-9]*)\".*", "1");
+        this.testWithPegasusClassADSVariables(
+                j, GLite.PBS_GRID_RESOURCE, Pegasus.CORES_KEY, "CORES", "1");
+    }
+
+    private void testWithPegasusClassADSVariables(
+            Job j,
+            String gridResource,
+            String pegasusProfileKey,
+            String expectedCERequirementKey,
+            String expectedValue)
+            throws CondorStyleException {
+        String ce = gs.getCERequirementsForJob(j, gridResource);
+
+        String expectedGlobusKey = Globus.pegasusProfilesToRSLKey().get(pegasusProfileKey);
+        if (!pegasusProfileKey.equals(Pegasus.GPUS_KEY)) {
+            // we have no mapping for the GPU's key
+            assertThat(expectedGlobusKey, notNullValue());
+            assertThat(j.globusRSL.containsKey(expectedGlobusKey), is(true));
+            assertThat(j.globusRSL.get(expectedGlobusKey), is(expectedValue));
+        }
+
+        String expectedClassAdKey =
+                ClassADSGenerator.pegasusProfilesToPegasusClassAdKeys().get(pegasusProfileKey);
+        System.err.println(ClassADSGenerator.pegasusProfilesToPegasusClassAdKeys());
+        assertThat(expectedClassAdKey, notNullValue());
+
+        // CORES=="$(MY.pegasus_cores)"
+        // .*CORES=="\$\(my\.(.*)\)".*
+        String regex = ".*" + expectedCERequirementKey + "==\"\\$\\(MY\\.(.*)\\)\".*";
+
+        // System.err.println("***** DEBUG *****");
+        // System.err.println( regex );
+        // System.err.println( ce );
+
+        Pattern p = Pattern.compile(regex);
+        Matcher m = p.matcher(ce);
+        String value = null;
+        while (m.find()) {
+            value = m.group(1);
+        }
+        assertThat(value, is(expectedClassAdKey));
     }
 
     private void testWithRegex(Job j, String gridResource, String regex, String expected)
@@ -310,6 +379,6 @@ public class GLiteTest {
         while (m.find()) {
             value = m.group(1);
         }
-        assertEquals(expected, value);
+        assertThat(value, is(expected));
     }
 }

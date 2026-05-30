@@ -27,6 +27,8 @@ import edu.isi.pegasus.planner.code.GridStart;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyle;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyleException;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyleFactory;
+import edu.isi.pegasus.planner.common.PegasusProperties;
+import edu.isi.pegasus.planner.namespace.Condor;
 import edu.isi.pegasus.planner.partitioner.graph.GraphNode;
 import java.io.File;
 import java.util.Arrays;
@@ -96,6 +98,7 @@ public class PegasusAWSBatchGS implements GridStart {
     private String mClusteredJobS3Bucket;
 
     private SiteStore mSiteStore;
+    private PegasusProperties mProps;
 
     public PegasusAWSBatchGS() {
         mPegasusLite = new PegasusLite();
@@ -111,6 +114,16 @@ public class PegasusAWSBatchGS implements GridStart {
         mLogger = bag.getLogger();
         mSiteStore = bag.getHandleToSiteStore();
         mSubmitDir = bag.getPlannerOptions().getSubmitDirectory();
+
+        // GH-2156 we need to make stat of files is disabled completely
+        // if running on AWS batch. We don't support it right now.
+        mProps = bag.getPegasusProperties();
+        mProps.setProperty(PegasusProperties.PEGASUS_KICKSTART_STAT_PROPERTY, "false");
+        mLogger.log(
+                "Kickstart stating turned off by AWSBatch Wrapper - "
+                        + mProps.doStatWithKickstart(),
+                LogManager.CONFIG_MESSAGE_LEVEL);
+
         mPegasusLite.initialize(bag, dag);
         mStyleFactory = new CondorStyleFactory();
         mStyleFactory.initialize(bag);
@@ -253,6 +266,8 @@ public class PegasusAWSBatchGS implements GridStart {
             StringBuilder sb = new StringBuilder();
             boolean match = true;
             for (String file : files) {
+                // GH-2151 expand $(wf_submit_dir) before putting it in the env
+                file = Condor.expandFilePath(file, Condor.WF_SUBMIT_DIR_KEY, this.mSubmitDir);
                 if (match && file.equals(mPegasusLite.mLocalPathToPegasusLiteCommon)) {
                     // no need to match further
                     match = false;

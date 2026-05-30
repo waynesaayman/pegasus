@@ -42,10 +42,10 @@ if [ "x$PEGASUS_BIN_DIR" = "x" ]; then
 fi
 
 # build the dax generator
-javac RosettaDAX.java
+CLASSPATH=.:$(pegasus-config --classpath) javac RosettaDAX.java
 
 # generate the dax
-java RosettaDAX dax.yml
+CLASSPATH=.:$(pegasus-config --classpath) java RosettaDAX dax.yml
 
 # site catalog
 cat > sites.yml <<EOF
@@ -70,7 +70,7 @@ sites:
       project: scavenge
       runtime: 1800
       glite.arguments: --cpus-per-task=1
-      memory: 2G
+      memory: 2048
       # Works around bug in the HTCondor GAHP, that does not
       # set the remote directory
       change.dir: 'true'

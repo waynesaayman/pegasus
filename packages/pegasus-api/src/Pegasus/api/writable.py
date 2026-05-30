@@ -13,15 +13,9 @@ __all__ = ["Writable"]
 
 
 class _CustomEncoder(json.JSONEncoder):
-    def default(self, obj):
-        # TODO: handle instance of Date and Path
-        """
-        if isinstance(obj, Date):
-                        return "whatever spec we come up with for Date such as ISO8601"
-        elif isinstance(obj, Path):
-            return obj.resolve
-        """
+    """JSON encoder that delegates to an object's ``__json__()`` method when present."""
 
+    def default(self, obj):
         if hasattr(obj, "__json__"):
             if callable(obj.__json__):
                 return obj.__json__()
@@ -77,8 +71,8 @@ class Writable:
 
         :param file: file object to write to
         :type file: file
-        :param _format: file format that can be "yml", "yaml", or "json
-        :type _ext: str
+        :param _format: file format; must be one of ``"yml"``, ``"yaml"``, or ``"json"``
+        :type _format: str
         :raises ValueError: _format must be one of "yml", "yaml" or "json"
         """
         if _format.lower() not in Writable._FORMATS:
@@ -117,7 +111,9 @@ class Writable:
                 self_as_dict, file, cls=_CustomEncoder, indent=4, ensure_ascii=False
             )
 
-    def write(self, file: Optional[Union[str, TextIO]] = None, _format: str = "yml"):
+    def write(
+        self, file: Optional[Union[str, Path, TextIO]] = None, _format: str = "yml"
+    ):
         """Serialize this class as either yaml or json and write to the given
         file. If file==None, this class will be written to a default file. The
         following classes have these defaults:
@@ -135,7 +131,7 @@ class Writable:
             =====================  ===================
 
         :param file: path or file object (opened in "w" mode) to write to, defaults to None
-        :type file: Optional[Union[str, TextIO]]
+        :type file: Optional[Union[str, Path, TextIO]]
         :param _format: can be either "yml", "yaml" or "json", defaults to "yml"
         :type _format: str, optional
         :raises ValueError: _format must be one of "yml", "yaml" or "json"
@@ -151,7 +147,7 @@ class Writable:
             file = self._DEFAULT_FILENAME
 
         # do the write
-        if isinstance(file, str):
+        if isinstance(file, (str, Path)):
             path = Path(file)
             ext = path.suffix[1:].lower()
 

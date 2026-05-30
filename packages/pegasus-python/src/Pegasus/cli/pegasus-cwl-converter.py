@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path, PurePath
 
 from cwl_utils import parser_v1_1 as cwl
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError
+
+# PEGASUS_PYTHONPATH is set by the pegasus-python-wrapper script
+peg_path = os.environ.get("PEGASUS_PYTHONPATH")
+if peg_path:
+    for p in reversed(peg_path.split(":")):
+        if p not in sys.path:
+            sys.path.insert(0, p)
 
 from Pegasus import yaml
 from Pegasus.api import (
@@ -344,7 +352,7 @@ def build_pegasus_rc(wf_inputs: dict, cwl_wf: cwl.Workflow) -> ReplicaCatalog:
 
 def collect_files(cwl_wf: cwl.Workflow) -> dict:
     log.info("Collecting workflow files")
-    wf_files = dict()
+    wf_files = {}
 
     log.info("Parsing input files from workflow inputs")
     for _input in cwl_wf.inputs:
@@ -407,7 +415,7 @@ def collect_files(cwl_wf: cwl.Workflow) -> dict:
 
 def collect_input_strings(wf_inputs: dict, cwl_wf: cwl.Workflow) -> dict:
     log.info("Collecting workflow input strings and string[] from input spec file")
-    wf_input_str = dict()
+    wf_input_str = {}
 
     for _input in cwl_wf.inputs:
         if _input.type == "string" or (
@@ -453,7 +461,7 @@ def build_pegasus_wf(
 
         # collect current step inputs
         log.info(f"Collecting step inputs from {step_name}")
-        step_inputs = dict()
+        step_inputs = {}
         for _input in step.in_:
             input_id = get_basename(_input.id)
 
@@ -496,9 +504,7 @@ def build_pegasus_wf(
 
         # add job args
         args = (
-            cwl_cmd_ln_tool.arguments
-            if cwl_cmd_ln_tool.arguments is not None
-            else list()
+            cwl_cmd_ln_tool.arguments if cwl_cmd_ln_tool.arguments is not None else []
         )
 
         # args will be added in the order of their assigned inputBinding

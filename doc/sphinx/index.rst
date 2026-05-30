@@ -25,6 +25,7 @@ Welcome to Pegasus WMS's documentation!
     user-guide/optimization.rst
     user-guide/migration.rst
     user-guide/glossary.rst
+    user-guide/getting-help.rst
 
 .. toctree::
     :caption: Reference Guide
@@ -41,6 +42,8 @@ Welcome to Pegasus WMS's documentation!
     reference-guide/pegasus-service.rst
     reference-guide/cwl-support.rst
     reference-guide/variable-expansion.rst
+    reference-guide/profile-expressions.rst
+    reference-guide/nersc-sfapi-submission.rst
     reference-guide/cli.rst
     reference-guide/funding-citing-usage-stats.rst
 

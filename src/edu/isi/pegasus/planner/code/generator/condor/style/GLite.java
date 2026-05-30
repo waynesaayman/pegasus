@@ -14,14 +14,21 @@
 package edu.isi.pegasus.planner.code.generator.condor.style;
 
 import edu.isi.pegasus.common.logging.LogManager;
+import edu.isi.pegasus.common.logging.LogManagerFactory;
 import edu.isi.pegasus.planner.catalog.classes.Profiles;
+import edu.isi.pegasus.planner.catalog.site.classes.GridGateway;
 import edu.isi.pegasus.planner.catalog.site.classes.SiteCatalogEntry;
 import edu.isi.pegasus.planner.classes.Job;
+import edu.isi.pegasus.planner.classes.PegasusBag;
 import edu.isi.pegasus.planner.classes.TransferJob;
+import edu.isi.pegasus.planner.code.CodeGenerator;
+import edu.isi.pegasus.planner.code.generator.condor.ClassADSGenerator;
 import edu.isi.pegasus.planner.code.generator.condor.CondorEnvironmentEscape;
 import edu.isi.pegasus.planner.code.generator.condor.CondorQuoteParser;
 import edu.isi.pegasus.planner.code.generator.condor.CondorQuoteParserException;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyleException;
+import edu.isi.pegasus.planner.common.PegasusConfiguration;
+import edu.isi.pegasus.planner.common.PegasusProperties;
 import edu.isi.pegasus.planner.namespace.Condor;
 import edu.isi.pegasus.planner.namespace.Globus;
 import edu.isi.pegasus.planner.namespace.Namespace;
@@ -117,6 +124,15 @@ public class GLite extends Abstract {
     public static String BATCH_GRID_RESOURCE_PREFIX = "batch";
 
     /**
+     * set in the job environment explicitly _CONDOR_TRANSFER_EXECUTABLE env variable if a non
+     * default value is used.
+     */
+    public static final String CONDOR_TRANSFER_EXECUTABLE_ENV_KEY = "_CONDOR_TRANSFER_EXECUTABLE";
+
+    /** A boolean to track whether to encode all resource profiles into remote_ce_requirements */
+    protected boolean mEncodeAllResourceProfilesIntoCEReqs;
+
+    /**
      * The internal mapping of globus keys to BLAHP directives.
      *
      * <pre>
@@ -141,9 +157,10 @@ public class GLite extends Abstract {
      * @param job
      * @return the batch system. If not found returns null
      */
-    public static final String getBatchSystem(Job job) {
+    /*public static final String getBatchSystem(Job job) {
         return GLite.getBatchSystem(job, GLite.getGridResource(job));
     }
+    */
 
     /**
      * Convenience method to retrieve the batch system associated with a grid_resource entry.
@@ -159,7 +176,7 @@ public class GLite extends Abstract {
 
         // Sample grid resource constructed for bosco/ssh
         // batch slurm user@bridges.psc.edu
-        String batchSystem = gridResource.replaceAll("^(batch|panda) ", "");
+        String batchSystem = gridResource.replaceAll("^(batch|panda|sfapi) ", "");
         return batchSystem.split(" ")[0];
     }
 
@@ -169,7 +186,7 @@ public class GLite extends Abstract {
      * @param job
      * @return the associated grid resource, else null
      */
-    public static final String getGridResource(Job job) {
+    public static final String getGridResourceFromCondorGridResource(Job job) {
         /* figure out the remote scheduler. should be specified with the job*/
         String gridResource = (String) job.condorVariables.get(Condor.GRID_RESOURCE_KEY);
         if (gridResource == null) {
@@ -178,6 +195,56 @@ public class GLite extends Abstract {
         // PM-1087 make it lower case first
         gridResource = gridResource.toLowerCase();
         return gridResource;
+    }
+
+    /**
+     * Constructs the grid_resource entry for the job. The grid resource is a tuple consisting of
+     * three fields.
+     *
+     * <p>A SSH grid resource specification is of the form:
+     *
+     * <p>grid_resource = batch <batch-system> remote_username@batch-headnode-hostname
+     *
+     * <p>The <batch-system> is the name of the batch system that we are submitting to. Normal
+     * values are pbs, lsf, and condor. It is picked up from the scheduler attribute for the grid
+     * gateway entry in the site catalog entry for the site
+     *
+     * @param job the job
+     * @return the grid_resource entry
+     * @throws CondorStyleException in case of any error occuring code generation.
+     */
+    private String constructGridResourceFromGridGateway(Job job) throws CondorStyleException {
+        StringBuilder gridResource = new StringBuilder();
+
+        SiteCatalogEntry s = mSiteStore.lookup(job.getSiteHandle());
+        GridGateway g = s.selectGridGateway(job.getGridGatewayJobType());
+        String contact = (g == null) ? null : g.getContact();
+
+        // first field is the type of grid gateway
+        gridResource.append(g.getType()).append(" ");
+
+        if (contact == null) {
+            StringBuilder error = new StringBuilder();
+            error.append("Grid Gateway not specified for site in site catalog  ")
+                    .append(job.getSiteHandle());
+            throw new CondorStyleException(error.toString());
+        }
+
+        // the job should have a scheduler specified
+        GridGateway.SCHEDULER_TYPE scheduler = g.getScheduler();
+        if (scheduler.equals(GridGateway.SCHEDULER_TYPE.fork)
+                || scheduler.equals(GridGateway.SCHEDULER_TYPE.unknown)) {
+            StringBuilder error = new StringBuilder();
+            error.append("Please specify a valid scheduler with the grid gateway for site ")
+                    .append(job.getSiteHandle())
+                    .append(" and job type ")
+                    .append(job.getGridGatewayJobType());
+            throw new RuntimeException(error.toString());
+        }
+        gridResource.append(scheduler.toString().toLowerCase()).append(" ");
+
+        gridResource.append(g.getContact()).append(" ");
+        return gridResource.toString();
     }
 
     /** Handle to escaping class for environment variables */
@@ -190,6 +257,7 @@ public class GLite extends Abstract {
         super();
         mEnvEscape = new CondorEnvironmentEscape();
         mCondorG = new CondorG();
+        mEncodeAllResourceProfilesIntoCEReqs = false;
     }
 
     /**
@@ -217,6 +285,10 @@ public class GLite extends Abstract {
                                 + site.getSiteHandle(),
                         LogManager.DEBUG_MESSAGE_LEVEL);
 
+                // GH-2132 do not set the condor quoting for the job to be false
+                // arguments always have to be condor quoted else condor_submit
+                // fails
+                /*
                 key = Pegasus.CONDOR_QUOTE_ARGUMENTS_KEY;
                 this.setProfileIfNotPresent(pegasusProfiles, key, "false");
                 mLogger.log(
@@ -227,6 +299,7 @@ public class GLite extends Abstract {
                                 + " for site "
                                 + site.getSiteHandle(),
                         LogManager.DEBUG_MESSAGE_LEVEL);
+                */
             }
         }
     }
@@ -257,16 +330,36 @@ public class GLite extends Abstract {
         /* universe is always set to grid*/
         job.condorVariables.construct(Condor.UNIVERSE_KEY, Condor.GRID_UNIVERSE);
 
-        String gridResource = GLite.getGridResource(job);
+        String gridResource = GLite.getGridResourceFromCondorGridResource(job);
         if (gridResource == null) {
-            throw new CondorStyleException(missingKeyError(job, Condor.GRID_RESOURCE_KEY));
+            // GH-2187 check to see if a grid gateway is specified in the site
+            // we pick the sfapi endpoints from there.
+            gridResource = this.constructGridResourceFromGridGateway(job);
+            job.condorVariables.construct(Condor.GRID_RESOURCE_KEY, gridResource.toString());
+            if (gridResource == null) {
+                throw new CondorStyleException(missingKeyError(job, Condor.GRID_RESOURCE_KEY));
+            }
+        }
+
+        // GH-2156 until HTCondor fixes setting of $_CONDOR_SCRATCH_DIR environment
+        // variable for grid universe jobs, we explicity set the variable to .
+        // in order for kickstart to read in the lof files correctly.
+        // GH-2173 BUT, we only do set $_CONDOR_SCRATCH_DIR for the sharedfs
+        // case where PegasusLite is not used to launch the jobs
+        String dataConf = job.getDataConfiguration();
+        if (dataConf != null
+                && dataConf.equals(PegasusConfiguration.SHARED_FS_CONFIGURATION_VALUE)) {
+            job.envVariables.construct(Condor.CONDOR_SCRATCH_DIR_ENV_VARIABLE, ".");
+            // GH-2156, GH-2173 in grid universe jobs condor does not set $_CONDOR_SCRATCH_DIR
+            // set that to the value pass for Pegasus Lite jobs running via Glite
+            CodeGenerator.replaceCondorScratchDirInArguments(job, mLogger, ".");
         }
 
         String batchSystem = GLite.getBatchSystem(job, gridResource);
         if (!supportedBatchSystem(batchSystem)) {
             // if it is not one of the support types, log a warning but use PBS.
             mLogger.log(
-                    "Glite mode supports only pbs, sge, slurm, moab or cobalt submission. Will use PBS style attributes for job "
+                    "Glite mode supports only pbs, sge, slurm, flux, moab or cobalt submission. Will use PBS style attributes for job "
                             + job.getID()
                             + " with grid resource "
                             + gridResource,
@@ -308,11 +401,6 @@ public class GLite extends Abstract {
                 "+remote_cerequirements", getCERequirementsForJob(job, batchSystem));
         generateBLAHPDirectives(job, batchSystem);
 
-        /* retrieve some keys from globus rsl and convert to gLite format */
-        if (job.globusRSL.containsKey("queue")) {
-            job.condorVariables.construct("batch_queue", (String) job.globusRSL.get("queue"));
-        }
-
         // PM-1116 set the task requirements as environment variables
         Globus rsl = job.globusRSL;
         for (Map.Entry<String, String> entry : Globus.rslToEnvProfiles().entrySet()) {
@@ -321,12 +409,35 @@ public class GLite extends Abstract {
 
             if (rsl.containsKey(rslKey)) {
                 String value = (String) rsl.get(rslKey);
-                if (rslKey.equals(Globus.MAX_WALLTIME_KEY)) {
-                    // handle runtime key as a special case as, as a globus profile it is in minutes
-                    // and we want in seconds
-                    long runtime = Long.parseLong(value) * 60;
-                    value = Long.toString(runtime);
+
+                if (Globus.rslKeysSubstitutedWithPegasusClassAds().contains(rslKey)) {
+                    // GH-2176 convoluted 2-stage process for a subset of key
+                    // map rsl -> pegasus profile -> pegasus classad key
+                    String pegasusProfileKey = Globus.rslToPegasusProfiles().get(rslKey);
+                    if (pegasusProfileKey == null) {
+                        throw new CondorStyleException(
+                                "For job: "
+                                        + job.getID()
+                                        + " unable to map rsl key "
+                                        + rslKey
+                                        + " to pegasus key");
+                    }
+                    value =
+                            ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(
+                                    pegasusProfileKey);
                 }
+
+                // GH-2176 no special handling for runtime key
+                // Globus is not used job submission. Globus profile
+                // namespace is internal and with 5.1.3 we assume
+                // the value to be in seconds.
+                //                if (rslKey.equals(Globus.MAX_WALLTIME_KEY)) {
+                //                    // handle runtime key as a special case as, as a globus
+                // profile it is in minutes
+                //                    // and we want in seconds
+                //                    long runtime = Long.parseLong(value) * 60;
+                //                    value = Long.toString(runtime);
+                //                }
 
                 job.envVariables.construct(envKey, value);
             }
@@ -357,6 +468,13 @@ public class GLite extends Abstract {
             applyCredentialsForRemoteExec(job);
         }
 
+        // GH-2186 we need to set env variable
+        // _CONDOR_TRANSFER_EXECUTABLE to the value in condor variable
+        // transfer_executable
+        // for blah to work correctly for sfapi
+        job.envVariables.construct(
+                GLite.CONDOR_TRANSFER_EXECUTABLE_ENV_KEY,
+                getTransferExecutableCondorVarForJob(job));
         /*
          PM-934 construct environment accordingly
          PM-1084 +remote_environment should be created only after credentials
@@ -366,6 +484,11 @@ public class GLite extends Abstract {
         job.condorVariables.construct(
                 GLite.CONDOR_REMOTE_ENVIRONMENT_KEY, mEnvEscape.escape(job.envVariables));
         job.envVariables.reset();
+
+        // GH-2187 update the grid resource if required for sfapi case
+        // we do it in the end after the whole style has been applied for
+        // the job.
+        updateCondorGridResourceForJob(job);
     }
 
     /**
@@ -424,7 +547,7 @@ public class GLite extends Abstract {
 
         /* specifically pass the queue in the requirement since
         some versions dont handle +remote_queue correctly */
-        if (job.globusRSL.containsKey("queue")) {
+        if (mEncodeAllResourceProfilesIntoCEReqs && job.globusRSL.containsKey("queue")) {
             value.append(" && ");
             addSubExpression(value, "QUEUE", (String) job.globusRSL.get("queue"));
         }
@@ -439,15 +562,23 @@ public class GLite extends Abstract {
 
         /* the globus key count is CORES */
         if (job.globusRSL.containsKey("count")) {
+            String pegasusClassAdKey =
+                    ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(
+                            Pegasus.CORES_KEY);
             value.append(" && ");
-            addSubExpression(value, "CORES", (String) job.globusRSL.get("count"));
+            // addSubExpression(value, "CORES", (String) job.globusRSL.get("count"));
+            addSubExpression(value, "CORES", pegasusClassAdKey);
         }
 
         /* PM-1625 pick the pegasus profile key gpus directly, as we don't have a RSL
         counterpart */
         if (job.vdsNS.containsKey(Pegasus.GPUS_KEY)) {
+            String pegasusClassAdKey =
+                    ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(
+                            Pegasus.GPUS_KEY);
             value.append(" && ");
-            addSubExpression(value, "GPUS", (String) job.vdsNS.get(Pegasus.GPUS_KEY));
+            // addSubExpression(value, "GPUS", (String) job.vdsNS.get(Pegasus.GPUS_KEY));
+            addSubExpression(value, "GPUS", pegasusClassAdKey);
         }
 
         /* the globus key xcount is PROCS */
@@ -457,35 +588,49 @@ public class GLite extends Abstract {
         }
 
         /* the globus key maxwalltime is WALLTIME */
-        if (job.globusRSL.containsKey("maxwalltime")) {
+        if (mEncodeAllResourceProfilesIntoCEReqs && job.globusRSL.containsKey("maxwalltime")) {
             value.append(" && ");
-            if (batchSystem.equals("lsf")) {
-                addSubExpression(
-                        value,
-                        "WALLTIME",
-                        lsfFormattedTimestamp((String) job.globusRSL.get("maxwalltime")));
-            } else {
-                addSubExpression(
-                        value,
-                        "WALLTIME",
-                        pbsFormattedTimestamp((String) job.globusRSL.get("maxwalltime")));
+            switch (batchSystem) {
+                case "flux":
+                    // GH-2143 globus maxwalltime is in minutes. flux expects in minutes
+                    // no formatting required.
+                    addSubExpression(value, "WALLTIME", (String) job.globusRSL.get("maxwalltime"));
+                    break;
+
+                case "lsf":
+                    addSubExpression(
+                            value,
+                            "WALLTIME",
+                            lsfFormattedTimestamp((String) job.globusRSL.get("maxwalltime")));
+                    break;
+
+                default:
+                    addSubExpression(
+                            value,
+                            "WALLTIME",
+                            pbsFormattedTimestamp((String) job.globusRSL.get("maxwalltime")));
+                    break;
             }
         }
 
         /* the globus key maxmemory is PER_PROCESS_MEMORY */
         if (job.globusRSL.containsKey("maxmemory")) {
             value.append(" && ");
-            addSubExpression(value, "PER_PROCESS_MEMORY", (String) job.globusRSL.get("maxmemory"));
+            addSubExpression(
+                    value, "PER_PROCESS_MEMORY", (String) job.globusRSL.get("totalmemory"));
         }
 
         /* the globus key totalmemory is TOTAL_MEMORY */
         if (job.globusRSL.containsKey("totalmemory")) {
+            String pegasusClassAdKey =
+                    ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(
+                            Pegasus.MEMORY_KEY);
             value.append(" && ");
-            addSubExpression(value, "TOTAL_MEMORY", (String) job.globusRSL.get("totalmemory"));
+            addSubExpression(value, "TOTAL_MEMORY", pegasusClassAdKey);
         }
 
         /* the globus key project is PROJECT */
-        if (job.globusRSL.containsKey(Globus.PROJECT_KEY)) {
+        if (mEncodeAllResourceProfilesIntoCEReqs && job.globusRSL.containsKey(Globus.PROJECT_KEY)) {
             value.append(" && ");
             addSubExpression(value, "PROJECT", (String) job.globusRSL.get(Globus.PROJECT_KEY));
         }
@@ -500,10 +645,16 @@ public class GLite extends Abstract {
         }
 
         /* the pegasus key glite.arguments is EXTRA_ARGUMENTS */
+
         if (job.vdsNS.containsKey(Pegasus.GLITE_ARGUMENTS_KEY)) {
+            String pegasusClassAdKey =
+                    ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(
+                            Pegasus.GLITE_ARGUMENTS_KEY);
             value.append(" && ");
-            addSubExpression(
-                    value, "EXTRA_ARGUMENTS", (String) job.vdsNS.get(Pegasus.GLITE_ARGUMENTS_KEY));
+            // addSubExpression(
+            //        value, "EXTRA_ARGUMENTS", (String)
+            // job.vdsNS.get(Pegasus.GLITE_ARGUMENTS_KEY));
+            addSubExpression(value, "EXTRA_ARGUMENTS", pegasusClassAdKey);
         }
 
         return value.toString();
@@ -687,9 +838,10 @@ public class GLite extends Abstract {
      */
     protected void handleResourceRequirements(Job job, String batchSystem)
             throws CondorStyleException {
+
         // PM-962 we update the globus RSL keys on basis
         // of Pegasus profile keys before doing any translation
-
+        // we then only deal with globus keys at this point!
         mCondorG.handleResourceRequirements(job);
 
         if (batchSystem.equals("pbs")
@@ -805,7 +957,9 @@ public class GLite extends Abstract {
                 // default case nothing specified
             }
 
-        } else if (batchSystem.equals("slurm")) {
+        } else if (batchSystem.equals("slurm")
+                || batchSystem.equals("sfapi")
+                || batchSystem.equals("flux")) {
             // for SLURM case
             boolean coresSet = job.globusRSL.containsKey(Globus.COUNT_KEY);
             boolean nodesSet = job.globusRSL.containsKey(Globus.HOST_COUNT_KEY);
@@ -872,6 +1026,7 @@ public class GLite extends Abstract {
                 : batchSystem.equals("pbs")
                         || batchSystem.equals("sge")
                         || batchSystem.equals("slurm")
+                        || batchSystem.equals("flux")
                         || batchSystem.equals("moab")
                         || batchSystem.equals("lsf")
                         || batchSystem.equals("cobalt");
@@ -894,13 +1049,40 @@ public class GLite extends Abstract {
      */
     private void generateBLAHPDirectives(Job job, String batchSystem) {
         // sanity check
+
+        if (!batchSystem.equals("cobalt")) {
+            // GH-2175 we only tackle project , runtime and queue for time being
+            // for all batch schedulers like pbs/sge/lsf/slurm
+
+            /* retrieve some keys from globus rsl and convert to condor keys */
+            if (job.globusRSL.containsKey("queue")) {
+                job.condorVariables.construct(
+                        "batch_queue",
+                        ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(
+                                Pegasus.QUEUE_KEY));
+            }
+            if (job.globusRSL.containsKey(Globus.PROJECT_KEY)) {
+                job.condorVariables.construct(
+                        "batch_project",
+                        ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(
+                                Pegasus.PROJECT_KEY));
+            }
+            if (job.globusRSL.containsKey(Globus.MAX_WALLTIME_KEY)) {
+                // globus maxwalltime is in minutes; condor expects in seconds
+                // long runtime =
+                //        Long.parseLong((String) job.globusRSL.get(Globus.MAX_WALLTIME_KEY)) * 60;
+
+                // GH-2176 just refer to corresponding pegasus classad key
+                job.condorVariables.construct(
+                        "batch_runtime",
+                        ClassADSGenerator.mapPegasusResourceProfileToPegasusClassAdVariable(
+                                Pegasus.RUNTIME_KEY));
+            }
+            return;
+        }
         /*generate blahp directives only for cobalt
          * till we verify it works for blahp backends in condor
          */
-        if (!batchSystem.equals("cobalt")) {
-            return;
-        }
-
         for (int i = 0; i < GLite.GLOBUS_BLAHP_DIRECTIVES_MAPPING.length; i++) {
             String globusKey = GLOBUS_BLAHP_DIRECTIVES_MAPPING[i][0];
             String blahpDirective = GLOBUS_BLAHP_DIRECTIVES_MAPPING[i][1];
@@ -918,8 +1100,15 @@ public class GLite extends Abstract {
         return;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws CondorStyleException {
         GLite gl = new GLite();
+        PegasusBag bag = new PegasusBag();
+        LogManager logger = LogManagerFactory.loadSingletonInstance();
+        logger.setLevel(LogManager.DEBUG_MESSAGE_LEVEL);
+        bag.add(PegasusBag.PEGASUS_LOGMANAGER, logger);
+        bag.add(PegasusBag.PEGASUS_PROPERTIES, PegasusProperties.nonSingletonInstance());
+        logger.logEventStart("glite-test", "key", "value");
+        gl.initialize(bag, null);
 
         System.out.println("0 mins is " + gl.pbsFormattedTimestamp("0"));
         System.out.println("11 mins is " + gl.pbsFormattedTimestamp("11"));
@@ -927,5 +1116,41 @@ public class GLite extends Abstract {
         System.out.println("69 mins is " + gl.pbsFormattedTimestamp("69"));
         System.out.println("169 mins is " + gl.pbsFormattedTimestamp("169"));
         System.out.println("1690 mins is " + gl.pbsFormattedTimestamp("1690"));
+
+        Job j = new Job();
+        String ce = gl.getCERequirementsForJob(j, GLite.PBS_GRID_RESOURCE);
+        System.err.println(ce);
+    }
+
+    /**
+     * Returns the transfer_executable condor profile for the job
+     *
+     * @param job
+     * @return
+     */
+    private String getTransferExecutableCondorVarForJob(Job job) {
+        String key = "transfer_executable";
+        String transfer_exec_value = "false";
+        if (job.condorVariables.containsKey(key)) {
+            // we do not put in the default value
+            transfer_exec_value = (String) job.condorVariables.get(key);
+        }
+        return transfer_exec_value;
+    }
+
+    /**
+     * Updates the grid_resource condor profile for the SFAPI case.
+     *
+     * @param job
+     */
+    private void updateCondorGridResourceForJob(Job job) {
+        String gridResource = getGridResourceFromCondorGridResource(job);
+        if (gridResource.startsWith("sfapi")) {
+            // GH-2187 only for sfapi case for time being it should be
+            // grid_resource = batch sfapi , instead of grid_resource = sfapi slurm perlmutter
+            // this is until our changes are pulled up into HTCondor upstream
+            gridResource = "batch sfapi";
+            job.condorVariables.construct(Condor.GRID_RESOURCE_KEY, gridResource);
+        }
     }
 }

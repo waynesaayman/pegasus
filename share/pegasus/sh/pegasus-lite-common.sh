@@ -29,11 +29,23 @@ if [ "X$PATH" = "X" ]; then
     export PATH
 fi
 
+# GH-2181 capture when we start
+pegasus_lite_start_time=$(date +%s)
+
 # a default used if no other worker packages can be found
 pegasus_lite_default_system="x86_64_rhel_8"
 
 # remember where we started from
 pegasus_lite_start_dir=`pwd`
+export pegasus_lite_start_dir
+
+# GH-2173 in grid universe cases _CONDOR_SCRATCH_DIR is not
+# set by BLAHP. Lets set it up ourselves to the directory
+# where we started from
+if [ "x$_CONDOR_SCRATCH_DIR" = "x" ]; then
+    _CONDOR_SCRATCH_DIR=$pegasus_lite_start_dir
+    export _CONDOR_SCRATCH_DIR
+fi
 
 pegasus_lite_setup_log()
 {
@@ -77,8 +89,8 @@ pegasus_lite_location()
     # try ipv4 first - it provides more accurate results in the geoip lookup
 
     if (curl --version) >/dev/null 2>&1; then
-        location=$(curl -s -S --insecure --max-time 60 --retry 0 --ipv4 https://location.scitech.group/v1/ 2>/dev/null || \
-                   curl -s -S --insecure --max-time 60 --retry 0 https://location.scitech.group/v1/ 2>/dev/null)
+        location=$(curl -s -S --fail --insecure --max-time 60 --retry 0 --ipv4 https://location.scitech.group/v1/ 2>/dev/null || \
+                   curl -s -S --fail --insecure --max-time 60 --retry 0 https://location.scitech.group/v1/ 2>/dev/null)
     fi
 
     if [ "x$location" = "x" ]; then
@@ -88,8 +100,12 @@ pegasus_lite_location()
         fi
     fi
 
+
     if [ "x$location" != "x" ]; then
-        echo "$location" >$PEGASUS_MULTIPART_DIR/location.yaml || true
+        # simple validation on the location data
+        if (echo "$location" | grep geohash) >/dev/null 2>&1; then
+            echo "$location" >$PEGASUS_MULTIPART_DIR/location.yaml || true
+        fi
     fi
     return 0
 }
@@ -390,11 +406,16 @@ pegasus_lite_setup_work_dir()
         if touch $d/.dirtest.$$ >/dev/null 2>&1; then
             rm -f $d/.dirtest.$$ >/dev/null 2>&1
             d=`mktemp -d $d/pegasus.XXXXXXXXX`
-            pegasus_lite_work_dir=$d
+	    
+            # GH-2156 we always want a full path . no relative paths
+            # for pegasus_lite_work_dir . We get relative path when
+            # Pegasus sets _CONDOR_SCRATCH_DIR=. in submit files
+            pegasus_lite_work_dir=$(cd $d && pwd)
             export pegasus_lite_work_dir
+
             pegasus_lite_work_dir_created=1
             export pegasus_lite_work_dir_created
-            pegasus_lite_log "  Workdir is $d - $free_human available"
+            pegasus_lite_log "  Workdir is $pegasus_lite_work_dir - $free_human available"
 
             pegasus_lite_log "Changing cwd to $pegasus_lite_work_dir"
             cd $pegasus_lite_work_dir
@@ -673,8 +694,12 @@ pegasus_lite_unexpected_exit()
         pegasus_lite_log "$pegasus_lite_work_dir cleaned up"
     fi
 
-    echo "PegasusLite: exitcode $rc" 1>&2
+    
+    pegasus_lite_end_time=$(date +%s)
+    runtime=$((pegasus_lite_end_time - pegasus_lite_start_time))
+    echo "PegasusLite: runtime $runtime" 1>&2
 
+    echo "PegasusLite: exitcode $rc" 1>&2
     exit $rc
 }
 
@@ -707,8 +732,11 @@ pegasus_lite_final_exit()
         pegasus_lite_log "$pegasus_lite_work_dir cleaned up"
     fi
 
-    echo "PegasusLite: exitcode $rc" 1>&2
+    pegasus_lite_end_time=$(date +%s)
+    runtime=$((pegasus_lite_end_time - pegasus_lite_start_time))
+    echo "PegasusLite: runtime $runtime" 1>&2
 
+    echo "PegasusLite: exitcode $rc" 1>&2
     exit $rc
 }
 

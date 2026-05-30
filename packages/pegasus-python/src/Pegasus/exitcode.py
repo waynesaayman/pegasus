@@ -1,3 +1,12 @@
+"""
+Implementation of ``pegasus-exitcode``: post-job processing that inspects
+kickstart output files to determine job success or failure.
+
+Rotates ``.out``/``.err`` files, checks cluster-summary and invocation records,
+scans for user-supplied success/failure messages, and optionally generates a
+``.meta`` file with output-file checksums.
+"""
+
 import atexit
 import datetime
 import json
@@ -7,7 +16,15 @@ import sys
 import uuid
 from optparse import OptionParser
 
+SUBMIT_FILE_UPDATE_ENABLED = True
+try:
+    from PythonSed import Sed, SedException
+except ImportError:
+    SUBMIT_FILE_UPDATE_ENABLED = False
+
+from Pegasus import expressions
 from Pegasus.cluster import RecordParser
+from Pegasus.monitoring.job import Job
 from Pegasus.monitoring.metadata import Metadata
 from Pegasus.tools import kickstart_parser
 
@@ -18,12 +35,35 @@ log = {
     "exitcode": None,
     "app_exitcode": None,
     "retry": None,
+    "job_retry": None,  # passed by dagman
 }
 tmp_log_files = []
 
+DEFAULT_EXPRESSIONS = {
+    "pegasus_cores": "1 if job_retry == 0 else job_retry + pegasus_cores",
+    "pegasus_queue": '"long" if duration > 0 else "debug"',
+}
+
+re_parse_pegasuslite_runtime = re.compile(r"^PegasusLite: runtime (\d+)$", re.MULTILINE)
+
+# on usage: format the string to add the pegasus classad key and the value
+# pattern also takes care of batch_ keys (without a +) that are
+# generated when using BLAHP
+# e.g. s/^\s*(\+?)(pegasus_queue)\s*=\s*(\'?)([^\']*)(\'?)/\1\2 = \3long\5/g
+# \1 matches to + ; \2  to the key ; \3 to optional " \4 the existing value  \5 to optional ending "
+# Since we are putting in a new value that we rely on python format option to provide it via {}
+
+# Note: the 4th capturing group is ([^\']*) to match the value enclosed in quotes. If we did (\S+) then
+# trailing " in qouted input value disappears in the generated substituted value. With (\S+)
+# pegasus_queue = "debug" would translate to pegasus_queue = "long as \4 would have matched to debug" and
+# \5 would be empty.
+sed_pattern_update_pegasus_classads = (
+    "s/^\\s*(\\+?)({})\\s*=\\s*('?)([^']*)('?)/\\1\\2 = \\3{}\\5/g"
+)
+
 
 class JobFailed(Exception):
-    pass
+    """Raised when a job is determined to have failed during exitcode processing."""
 
 
 def rotate_file(outfile, errfile):
@@ -69,6 +109,15 @@ def rotate_file(outfile, errfile):
 
 
 def readfile(filename):
+    """Read and return the full contents of *filename*.
+
+    Returns an empty string if *filename* is ``None`` or the file does not exist.
+
+    :param filename: Path to the file to read, or ``None``.
+    :type filename: str or None
+    :return: File contents, or ``""`` if unavailable.
+    :rtype: str
+    """
     # If the file does not exits, return empty string
     if filename is None or not os.path.isfile(filename):
         return ""
@@ -138,6 +187,16 @@ def check_cluster_summary(record):
 
 
 def check_kickstart_records(txt):
+    """Scan *txt* for kickstart invocation records and verify all tasks exited cleanly.
+
+    Checks for integrity errors first, then iterates YAML ``raw:`` fields and XML
+    ``<status raw="..."/>`` elements. Raises :class:`JobFailed` if any task
+    exited non-zero or if no invocation records are found.
+
+    :param txt: Raw content of the kickstart ``.out`` file.
+    :type txt: str
+    :raises JobFailed: If any task failed or no invocation records are present.
+    """
     # Check the exitcodes of all kickstart records
     regex = re.compile(r'raw="(-?[0-9]+)"')
     succeeded = 0
@@ -184,6 +243,17 @@ def check_kickstart_records(txt):
 
 
 def unquote_message(message):
+    """Decode a Pegasus-quoted message string.
+
+    ``+`` is decoded as a space; ``\\+`` as a literal ``+``; other backslash
+    sequences are passed through unchanged.
+
+    :param message: The encoded message string.
+    :type message: str
+    :return: The decoded message string.
+    :rtype: str
+    """
+
     def genchars():
         yield from message
 
@@ -210,6 +280,13 @@ def unquote_message(message):
 
 
 def unquote_messages(messages):
+    """Decode a list of Pegasus-quoted message strings using :func:`unquote_message`.
+
+    :param messages: List of encoded message strings.
+    :type messages: list[str]
+    :return: List of decoded message strings.
+    :rtype: list[str]
+    """
     return [unquote_message(m) for m in messages]
 
 
@@ -229,7 +306,7 @@ def has_any_failure_messages(stdio, messages):
 
 
 def has_all_success_messages(stdio, messages):
-    """Return true if any of the messages don't appear in the files"""
+    """Return True if all *messages* appear somewhere in *stdio*, or if *messages* is empty."""
     if len(messages) == 0:
         return True
 
@@ -259,6 +336,19 @@ def get_errfile(outfile):
     return errfile
 
 
+def get_sub_file(outfile):
+    """
+    Get the job name and the submit  file name given the stdout file name
+    :param outfile:
+    :return: the job name, and the name of the submit file
+    """
+    i = outfile.rfind(".out")
+    name = outfile[0:i]
+
+    subfile = name + ".sub"
+    return name, subfile
+
+
 def append_to_wf_metadata_log(files_metadata, logfile):
     """
     Writes out file metadata to a logfile in the File RC format
@@ -284,6 +374,35 @@ def exitcode(
     wf_metadata_log=None,
     generate_meta=True,
 ):
+    """Evaluate the success or failure of a job by inspecting its output file.
+
+    Performs the following checks in order:
+
+    1. Rotates ``.out``/``.err`` to ``.out.NNN``/``.err.NNN`` (unless *rename* is False).
+    2. Checks the DAGMan-reported exit status (*dagman_job_status*).
+    3. Checks that stdout is non-empty (when *check_invocations* is True).
+    4. Scans for user-supplied *failure_messages* and *success_messages*.
+    5. Validates cluster-summary records or individual kickstart invocation records.
+    6. Optionally generates a ``.meta`` file and/or appends to *wf_metadata_log*.
+
+    :param outfile: Path to the ``.out`` file (must end in ``.out``).
+    :type outfile: str
+    :param check_invocations: Whether to require kickstart invocation records.
+    :type check_invocations: bool
+    :param dagman_job_status: Exit code reported by DAGMan, or ``None``.
+    :type dagman_job_status: int or None
+    :param rename: Whether to rotate the output file. Defaults to ``True``.
+    :type rename: bool
+    :param failure_messages: Strings whose presence in stdout/stderr marks failure.
+    :type failure_messages: list[str]
+    :param success_messages: Strings that must all appear in stdout/stderr.
+    :type success_messages: list[str]
+    :param wf_metadata_log: Path to append workflow-level file metadata records.
+    :type wf_metadata_log: str or None
+    :param generate_meta: Whether to write a ``.meta`` checksums file.
+    :type generate_meta: bool
+    :raises JobFailed: If the job is determined to have failed.
+    """
     if not os.path.isfile(outfile):
         raise JobFailed("%s does not exist" % outfile)
 
@@ -352,6 +471,16 @@ def exitcode(
 
 
 def parse_metadata_from_kickstart(outfile):
+    """Parse output file metadata from kickstart invocation records.
+
+    Reads kickstart records from *outfile* and extracts :class:`~Pegasus.monitoring.metadata.FileMetadata`
+    objects for each output file referenced in invocation records.
+
+    :param outfile: Path to the (possibly rotated) kickstart ``.out`` file.
+    :type outfile: str
+    :return: List of file metadata objects for output files.
+    :rtype: list
+    """
     # First assume we will find rotated file
     parser = kickstart_parser.Parser(outfile)
     kickstart_output = parser.parse_stampede()
@@ -368,16 +497,212 @@ def parse_metadata_from_kickstart(outfile):
     return files
 
 
+def update_job_submit_file(outfile, retry):
+    # figure out the job submit file from the .out file
+    jobname, sub_file = get_sub_file(outfile)
+    if not os.path.exists(sub_file):
+        raise JobFailed("Could not find job submit file %s" % sub_file)
+
+    j = Job(
+        name=jobname,
+        job_submit_dir=os.path.dirname(sub_file),
+        wf_uuid=None,
+        job_submit_seq=None,
+    )
+
+    epoch = datetime.datetime.now().timestamp()
+    result, site = j.parse_sub_file(int(epoch), submit_file=sub_file)
+
+    # build the symbol table once and converting
+    # integer values to be actual int
+    symbols = _get_symbol_table(j, retry, outfile)
+
+    # keep suffix same
+    suffix = _get_submit_file_backup_suffix()
+
+    sed = Sed(in_place=suffix, regexp_extended=True)
+    sed_patterns = []
+
+    # first identify any expressions that are present
+    # in the submit file as condor submit file variables
+    # starting with pegasus_*_expr
+    expressions = _get_expressions_list(j)
+    print(expressions)
+
+    # create python expressions for pegasus classads
+    for key in j.get_pegasus_classads():
+        value = j.get_pegasus_classads().get(key)
+        # print(f"key {key} -> {value}")
+        try:
+            value = int(value)
+        except:
+            pass
+
+        expression = expressions.get(key)
+        if expression:
+            sed_patterns.append(_get_sed_pattern(expression, symbols, key, value))
+            # load what we inserted
+            sed.load_string(sed_patterns[-1])
+
+    # apply the sed patterns in one go
+    if sed_patterns:
+        print(sed_patterns)
+        _log_info(f"Updating submit file with patterns {sed_patterns}")
+        try:
+            sed.apply(sub_file)
+        except SedException as e:
+            _log_error(e.message)
+        except:
+            raise
+
+
+def _get_expressions_list(j):
+    """
+    Returns a dictionary listing expressions to apply indexed by
+    pegasus classads (without the +)
+    :param j:
+    :return:
+    """
+    expressions = {}
+    pegasus_classad_submit_vars = j.get_pegasus_classads()
+    # variable is like pegasus_queue_expr = '"long" if duration > 0 else "debug"'
+    for key in pegasus_classad_submit_vars:
+        if key.endswith("_expr"):
+            value = pegasus_classad_submit_vars.get(key)
+            key = key[:-5]
+            if value:
+                value = value.strip("'")
+                expressions[key] = value
+    return expressions
+
+
+def _get_sed_pattern(expression, symbols, key, value):
+    """
+    Returns the sed pattern corresponding to evaluating the
+    expression.
+
+    :param expression: the expression to apply
+    :param symbols: the variables made available for expression evaulation
+    :param key: the key that is being updated
+    :param value: current value of the key from the submit file.
+    :return:
+    """
+    _log_info(f"Apply {key} = ({expression}) ")
+    newvalue = expressions.mandatory_parse(expression, symbols=symbols)
+    _log_info(f"Creating sed pattern {key},{value} -> {newvalue}")
+
+    # actually update the submit file with the new value
+    # s/^\s*(\+?)(pegasus_queue)\s*=\s*("?)([^"]*)("?)/\1\2 = \3long\5/g
+    pattern = sed_pattern_update_pegasus_classads.format(key, newvalue)
+    # print(pattern)
+    return pattern
+
+
+def _get_symbol_table(j, retry, outfile):
+    """
+    Builds the symbol table that we need to evaluate the expression
+    against for the job
+    :param j: the Job object created after parsing the submit file.
+    :param retry: the retry value of the job
+    :param outfile: the job output file.
+    :return: a dict containing the symbols.
+    """
+    symbols = {}
+    for key in j.get_pegasus_classads():
+        value = j.get_pegasus_classads().get(key)
+        try:
+            value = int(value)
+        except:
+            pass
+        symbols[key] = value
+    symbols["job_retry"] = retry
+
+    # now try and get information from the job invocation
+    # record and make it available
+    try:
+        parser = kickstart_parser.Parser(outfile)
+        kickstart_output = parser.parse_stampede()
+
+        # the invocation event that we send as part
+        # of the composite event is what we make
+        # available as additional attributes in symbold table
+        j.extract_job_info(kickstart_output)
+
+        for invocation in j._invocation_events:
+            # To DO: in case of clustered jobs there are multiple
+            # invocations. we need to take max values or something??
+            for key in invocation:
+                symbols[key] = invocation[key]
+    except:
+        pass
+
+    # determine the duration of the whole job. we get this
+    # in the .err file if PegasusLite is used
+    error_file = get_errfile(outfile)
+    job_runtime = _get_job_runtime(error_file)
+    if job_runtime is None:
+        # check we have something populated from the invocation record
+        if "duration" in symbols:
+            job_runtime = symbols["duration"]
+
+    if job_runtime:
+        symbols["job_runtime"] = job_runtime
+
+    print(symbols)
+    return symbols
+
+
+def _get_submit_file_backup_suffix():
+    """
+    Return the suffix to use for backing up the submit file
+    :return:
+    """
+
+    # log["retry"] is populated if rotation of stdout/stderr is enabled
+    global_retry = log["retry"] if log["retry"] else 0
+    suffix = ".%03d" % global_retry
+    return suffix
+
+
+def _get_job_runtime(error_file):
+    """
+    Retrieve the runtime logged for the job in the .err
+    file by PegasusLite
+    :param error_file:
+    :return: the duration logged if a PegasusLite job, else None
+    """
+    runtime = None
+    if not os.path.isfile(error_file):
+        return runtime
+
+    # Read the file first
+    f = open(error_file)
+    txt = f.read()
+    f.close()
+
+    # try and determine the exitcode from .err file
+    runtime_match = re_parse_pegasuslite_runtime.search(txt)
+    if runtime_match:
+        # a match yes it is a PegasusLite job . gleam the exitcode
+        runtime = runtime_match.group(1)
+        try:
+            runtime = int(runtime)
+        except:
+            _log_error(f"Unable to convert {runtime} to int")
+
+    return runtime
+
+
 def _log_info(info_msg):
     if len(tmp_log_files) > 0:
-        tmp_log_files[0].write(info_msg + "\n")
+        tmp_log_files[0].write(info_msg + "\n ")
     else:
         print(info_msg)
 
 
 def _log_error(err_msg):
     if len(tmp_log_files) > 0:
-        tmp_log_files[1].write(err_msg + "\n")
+        tmp_log_files[1].write(err_msg + "\n ")
     else:
         print(err_msg)
 
@@ -417,6 +742,25 @@ def main(args):
         metavar="R",
         help="Return code reported by DAGMan. This can be specified in a "
         "DAG using the $RETURN variable.",
+    )
+    parser.add_option(
+        "-R",
+        "--retry",
+        action="store",
+        type="int",
+        default=0,
+        dest="job_retry",
+        help="The job retry number reported by DAGMan. This can be "
+        "specified in a DAG using the $RETRY variable.",
+    )
+    parser.add_option(
+        "-U",
+        "--update-submit-file",
+        action="store_true",
+        default=False,
+        dest="update_submit_file",
+        help="In case of job failure, attempt to update resource requirement "
+        "profiles in the submit file by applying expressions provided.",
     )
     parser.add_option(
         "-n",
@@ -503,6 +847,7 @@ def main(args):
     try:
         log["name"] = outfile
         log["timestamp"] = datetime.datetime.now().isoformat()
+        log["job_retry"] = options.job_retry
         exitcode(
             outfile,
             check_invocations=options.check_invocations,
@@ -519,12 +864,32 @@ def main(args):
     except JobFailed as jf:
         _log_error(str(jf))
         log["exitcode"] = 1
+
+        try:
+            # job failed lets see if we need to change any
+            # pegasus resoruce requirement classads
+            if options.update_submit_file:
+                if SUBMIT_FILE_UPDATE_ENABLED:
+                    update_job_submit_file(outfile, retry=options.job_retry)
+                else:
+                    _log_error(
+                        "submit file was not updated as pythonsed package is not installed"
+                    )
+        except Exception as e:
+            _log_error(
+                f"Unable to modify job submit file corresponding to {outfile} because of exception {e}"
+            )
+
         _write_logs(options.log_filename)
         sys.exit(1)
 
 
 @atexit.register
 def remove_temporary_files():
+    """Remove temporary stdout/stderr log files created during this process run.
+
+    Registered via :func:`atexit.register`; called automatically on interpreter exit.
+    """
     # cleaning temporary files
     for tmp_file in tmp_log_files:
         os.remove(tmp_file.name)

@@ -60,10 +60,10 @@ public class StageIn extends Abstract {
     /** The property prefix for retrieving SRM properties. */
     public static final String SRM_PROPERTIES_PREFIX = "pegasus.transfer.srm";
 
-    /** The suffix to retrive the service url for SRM server. */
+    /** The suffix to retrieve the service url for SRM server. */
     public static final String SRM_SERVICE_URL_PROPERTIES_SUFFIX = "service.url";
 
-    /** The suffix to retrive the mount point for SRM server. */
+    /** The suffix to retrieve the mount point for SRM server. */
     public static final String SRM_MOUNT_POINT_PROPERTIES_SUFFIX = "mountpoint";
 
     /** The handle to the replica selector that is to used to select the various replicas. */
@@ -109,6 +109,7 @@ public class StageIn extends Abstract {
      * @param bag bag of initialization objects
      * @param refiner
      */
+    @Override
     public void initalize(ADag dag, PegasusBag bag, Refiner refiner) {
         super.initalize(dag, bag, refiner);
         mUseSymLinks = mProps.getUseOfSymbolicLinks();
@@ -675,6 +676,18 @@ public class StageIn extends Abstract {
             // whether a file is set for bypass staging or not
             pf.setForBypassStaging(bypassFirstLevelStagingPossible);
 
+            // GH-2141 if the destination URL is an OSDF URL
+            // explicilty turn cleanup off
+            if (preferredDestPutURL.startsWith(PegasusURL.OSDF_PROTOCOL_SCHEME)) {
+                mLogger.log(
+                        "For job "
+                                + job.getID()
+                                + " turned off cleanup for input file staged to OSDF - "
+                                + pf.getLFN(),
+                        LogManager.DEBUG_MESSAGE_LEVEL);
+                pf.setForCleanup(false);
+            }
+
             if (!bypassFirstLevelStagingPossible) {
                 // no bypass of input file staging. we need to add
                 // data stage in nodes for the lfn
@@ -733,7 +746,9 @@ public class StageIn extends Abstract {
         // and we are in pegasus lite mode
         if ((this.mBypassStagingForInputs || file.doBypassStaging())
                 && mPegasusConfiguration.jobSetupForWorkerNodeExecution(job)) {
-            boolean isFileURL = entry.getPFN().startsWith(PegasusURL.FILE_URL_SCHEME);
+            String pfn = entry.getPFN();
+            boolean isFileURL =
+                    pfn.startsWith(PegasusURL.FILE_URL_SCHEME) || pfn.startsWith(File.separator);
             String fileSite = entry.getResourceHandle();
 
             // PM-1885 no special handling for CondorIO, as now CondorIO mode

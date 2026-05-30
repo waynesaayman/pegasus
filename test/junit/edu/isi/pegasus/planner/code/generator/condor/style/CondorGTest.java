@@ -15,7 +15,8 @@
  */
 package edu.isi.pegasus.planner.code.generator.condor.style;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 
 import edu.isi.pegasus.planner.classes.Job;
 import edu.isi.pegasus.planner.code.generator.condor.CondorStyleException;
@@ -72,9 +73,9 @@ public class CondorGTest {
     @Test
     public void testPegasusProfileRuntime() throws CondorStyleException {
         Job j = new Job();
-        // runtime in seconds. walltime in minutes
+        // runtime in seconds. walltime in seconds now.
         j.vdsNS.checkKeyInNS(Pegasus.RUNTIME_KEY, "5");
-        testForKey(j, Globus.MAX_WALLTIME_KEY, "1");
+        testForKey(j, Globus.MAX_WALLTIME_KEY, "5");
     }
 
     @Test
@@ -89,20 +90,20 @@ public class CondorGTest {
     public void testPegasusProfileMemory() throws CondorStyleException {
         Job j = new Job();
         j.vdsNS.checkKeyInNS(Pegasus.MEMORY_KEY, "5");
-        testForKey(j, Globus.MAX_MEMORY_KEY, "5");
+        testForKey(j, Globus.TOTAL_MEMORY_KEY, "5");
     }
 
     @Test
     public void testPegasusProfileMemoryAndGlobusKey() throws CondorStyleException {
         Job j = new Job();
         j.vdsNS.checkKeyInNS(Pegasus.MEMORY_KEY, "5");
-        j.globusRSL.checkKeyInNS(Globus.MAX_MEMORY_KEY, "6");
-        testForKey(j, Globus.MAX_MEMORY_KEY, "6");
+        j.globusRSL.checkKeyInNS(Globus.TOTAL_MEMORY_KEY, "6");
+        testForKey(j, Globus.TOTAL_MEMORY_KEY, "6");
     }
 
     private void testForKey(Job j, String key, String expectedValue) throws CondorStyleException {
         cs.handleResourceRequirements(j);
-        assertTrue(j.globusRSL.containsKey(key));
-        assertEquals(expectedValue, j.globusRSL.get(key));
+        assertThat(j.globusRSL.containsKey(key), is(true));
+        assertThat(j.globusRSL.get(key), is(expectedValue));
     }
 }

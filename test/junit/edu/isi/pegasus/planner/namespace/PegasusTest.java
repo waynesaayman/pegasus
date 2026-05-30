@@ -13,15 +13,15 @@
  */
 package edu.isi.pegasus.planner.namespace;
 
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 import edu.isi.pegasus.common.logging.LogManager;
 import edu.isi.pegasus.planner.test.DefaultTestSetup;
 import edu.isi.pegasus.planner.test.TestSetup;
 import java.util.LinkedList;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -38,12 +38,6 @@ public class PegasusTest {
     private static int mTestNum = 1;
 
     public PegasusTest() {}
-
-    @BeforeAll
-    public static void setUpClass() {}
-
-    @AfterAll
-    public static void tearDownClass() {}
 
     @BeforeEach
     public void setUp() {
@@ -138,7 +132,11 @@ public class PegasusTest {
         mLogger.logEventCompletion();
 
         mLogger.logEventStart("test.namespace.Pegasus", "set", Integer.toString(mTestNum++));
-        testKey(Pegasus.DISKSPACE_KEY, "dummy", Namespace.VALID_KEY);
+        testKey(Pegasus.DISKSPACE_KEY, "1024", Namespace.VALID_KEY);
+        mLogger.logEventCompletion();
+
+        mLogger.logEventStart("test.namespace.Pegasus", "set", Integer.toString(mTestNum++));
+        this.testKeyWithIllegalArgument(Pegasus.DISKSPACE_KEY, "1G", "should have a numeric value");
         mLogger.logEventCompletion();
 
         mLogger.logEventStart("test.namespace.Pegasus", "set", Integer.toString(mTestNum++));
@@ -206,7 +204,11 @@ public class PegasusTest {
         mLogger.logEventCompletion();
 
         mLogger.logEventStart("test.namespace.Pegasus", "set", Integer.toString(mTestNum++));
-        testKey(Pegasus.MEMORY_KEY, "dummy", Namespace.VALID_KEY);
+        testKey(Pegasus.MEMORY_KEY, "1", Namespace.VALID_KEY);
+        mLogger.logEventCompletion();
+
+        mLogger.logEventStart("test.namespace.Pegasus", "set", Integer.toString(mTestNum++));
+        this.testKeyWithIllegalArgument(Pegasus.MEMORY_KEY, "1G", "should have a numeric value");
         mLogger.logEventCompletion();
 
         mLogger.logEventStart("test.namespace.Pegasus", "set", Integer.toString(mTestNum++));
@@ -373,6 +375,32 @@ public class PegasusTest {
         System.out.println("Testing Key " + key);
         Pegasus p = new Pegasus();
         int result = p.checkKey(key, value);
-        assertEquals(expected, result, key);
+        assertThat(key, result, is(expected));
+    }
+
+    /**
+     * convenience method
+     *
+     * @param key
+     * @param expected
+     * @param actual
+     */
+    private void testKeyWithIllegalArgument(String key, String value, String expectedErrorMessage) {
+        System.out.println("Testing Key " + key);
+        Pegasus p = new Pegasus();
+
+        Exception exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> {
+                            p.checkKey(key, value);
+                        });
+        assertThat(
+                "EXCEPTION MESSAGE "
+                        + exception.getMessage()
+                        + " DOES NOT CONTAIN "
+                        + expectedErrorMessage,
+                exception.getMessage().contains(expectedErrorMessage),
+                is(true));
     }
 }
