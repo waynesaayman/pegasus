@@ -29,7 +29,7 @@ build-backend = "setuptools.build_meta"
 # readme = { file = "README.md", content-type = "text/markdown" }
 # license = "Apache-2.0"
 # license-files = ["LICENSE"]
-# requires-python = ">=3.6"
+# requires-python = ">=3.10"
 # classifiers = [
 #   "Development Status :: 5 - Production/Stable",
 #   "Intended Audience :: Developers",
@@ -38,10 +38,6 @@ build-backend = "setuptools.build_meta"
 #   "Programming Language :: Python",
 #   "Programming Language :: Python :: 3",
 #   "Programming Language :: Python :: 3 :: Only",
-#   "Programming Language :: Python :: 3.6",
-#   "Programming Language :: Python :: 3.7",
-#   "Programming Language :: Python :: 3.8",
-#   "Programming Language :: Python :: 3.9",
 #   "Programming Language :: Python :: 3.10",
 #   "Programming Language :: Python :: 3.11",
 #   "Programming Language :: Python :: 3.12",
@@ -60,7 +56,6 @@ build-backend = "setuptools.build_meta"
 #   "Flask-Caching",
 #   "requests",
 #   "sqlalchemy",
-#   "dataclasses;python_version=='3.6'",
 #   "pegasus-wms.api",
 #   "pegasus-wms.common",
 #   "pegasus-wms.worker",
@@ -113,7 +108,7 @@ skip = [
 
 [tool.black]
 
-target-version = ["py36"]
+target-version = ["py310"]
 
 exclude = '''
 /(

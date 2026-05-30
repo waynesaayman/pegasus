@@ -13,10 +13,7 @@ from setuptools import setup
 src_dir = os.path.dirname(__file__)
 home_dir = os.path.abspath(os.path.join(src_dir, "../.."))
 
-install_requires = [
-    "PyYAML",
-    "dataclasses;python_version=='3.6'",
-]
+install_requires = ["PyYAML"]
 
 
 #
@@ -56,7 +53,7 @@ setup(
         "Repository": "https://github.com/pegasus-isi/pegasus",
         "Issue": "https://github.com/pegasus-isi/pegasus/issues",
     },
-    python_requires=">=3.6",
+    python_requires=">=3.10",
     keywords=["scientific workflows"],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -66,10 +63,6 @@ setup(
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3 :: Only",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
