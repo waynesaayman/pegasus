@@ -110,4 +110,3 @@ TOOL_PATH="$PEGASUS_HOME/@PYTHON_LIBDIR@/Pegasus/cli/$BASE_NAME.py"
 
 # now execute
 exec "$PEGASUS_PYTHON" "$TOOL_PATH" "$@"
-

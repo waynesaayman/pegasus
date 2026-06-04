@@ -251,7 +251,7 @@ def route_get_trigger(ensemble, trigger):
 
 {
   id: "id", <-- unique id to a request, it has been added as request.uid (use this when logging)
-  code: "UNPROCESSABLE_ENTITY", <-- capitalized versions of errors that json schema would return 
+  code: "UNPROCESSABLE_ENTITY", <-- capitalized versions of errors that json schema would return
   "message": "Err description",
   "errors": [
     {

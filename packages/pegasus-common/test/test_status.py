@@ -309,8 +309,8 @@ def test_fetch_status_json(
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE  
-                   0       0      0      0       0       17        0     100.0  
+                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE
+                   0       0      0      0       0       17        0     100.0
                 Summary: 1 DAG total (Success:1)
                 """
             ),
@@ -322,8 +322,8 @@ def test_fetch_status_json(
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE  
-                   28      0      0      1       0        0        0      0.0   
+                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE
+                   28      0      0      1       0        0        0      0.0
                 Summary: 1 DAG total (Running:1)
                 """
             ),
@@ -335,8 +335,8 @@ def test_fetch_status_json(
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE  
-                   9       0      0      0       0        8        3      40.0  
+                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE
+                   9       0      0      0       0        8        3      40.0
                 Summary: 1 DAG total (Failure:1)
                 """
             ),
@@ -348,8 +348,8 @@ def test_fetch_status_json(
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE  
-                   21      0      0      4       0        4        0     13.79  
+                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE
+                   21      0      0      4       0        4        0     13.79
                 Summary: 1 DAG total (Failure:1)
                 """
             ),
@@ -361,8 +361,8 @@ def test_fetch_status_json(
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE  
-                   0       0      0      0       0        0        0      0.0   
+                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE
+                   0       0      0      0       0        0        0      0.0
                 Summary: 1 DAG total (Failure:1)
                 """
             ),
@@ -375,8 +375,8 @@ def test_fetch_status_json(
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE  
-                   0       0      0      0       0       33        0     100.0  
+                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE
+                   0       0      0      0       0       33        0     100.0
                 Summary: 3 DAGs total (Success:3)
                 """
             ),
@@ -388,8 +388,8 @@ def test_fetch_status_json(
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE  
-                   4       0      0      0       0        8        1     61.54  
+                UNREADY  READY   PRE   QUEUED   POST   SUCCESS  FAILURE  %DONE
+                   4       0      0      0       0        8        1     61.54
                 Summary: 2 DAGs total (Failure:2)
                 """
             ),
@@ -415,13 +415,13 @@ def test_show_dag_progress_with_legend(mocker, capsys, status):
     expected_output = dedent(
         """
                 (No matching jobs found in Condor Q)
-                
+
                 UNREADY: Jobs blocked by dependencies  READY: Jobs ready for submission  PRE : PRE-Scripts running
                 IN_Q: Submitted jobs  POST: POST-Scripts running  DONE: Job completed with success
                 FAIL: Jobs completed with failure  %DONE: Success percentage STATE: Workflow state DAGNAME: Name of workflow
 
-                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME                  
-                   0      0     0    0     0     17    0   100.0 Success sample_1_success.dag     
+                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME
+                   0      0     0    0     0     17    0   100.0 Success sample_1_success.dag
                 Summary: 1 DAG total (Success:1)
                 """
     )
@@ -446,8 +446,8 @@ def test_show_dag_progress_with_legend(mocker, capsys, status):
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME                  
-                   0      0     0    0     0     17    0   100.0 Success sample_1_success.dag     
+                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME
+                   0      0     0    0     0     17    0   100.0 Success sample_1_success.dag
                 Summary: 1 DAG total (Success:1)
                 """
             ),
@@ -460,8 +460,8 @@ def test_show_dag_progress_with_legend(mocker, capsys, status):
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME                  
-                  28      0     0    1     0     0     0    0.0  Running sample_2_held.dag        
+                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME
+                  28      0     0    1     0     0     0    0.0  Running sample_2_held.dag
                 Summary: 1 DAG total (Running:1)
                 """
             ),
@@ -474,8 +474,8 @@ def test_show_dag_progress_with_legend(mocker, capsys, status):
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME                  
-                   9      0     0    0     0     8     3    40.0 Failure sample_3_failure.dag     
+                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME
+                   9      0     0    0     0     8     3    40.0 Failure sample_3_failure.dag
                 Summary: 1 DAG total (Failure:1)
                 """
             ),
@@ -489,10 +489,10 @@ def test_show_dag_progress_with_legend(mocker, capsys, status):
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME                  
-                   4      0     0    0     0     8     1   61.54 Failure sample2_hr_failure.dag   
-                   0      0     0    0     0     0     0    0.0  Failure   └─inner.dag            
-                   4      0     0    0     0     8     1   61.54         TOTALS(13 jobs)          
+                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME
+                   4      0     0    0     0     8     1   61.54 Failure sample2_hr_failure.dag
+                   0      0     0    0     0     0     0    0.0  Failure   └─inner.dag
+                   4      0     0    0     0     8     1   61.54         TOTALS(13 jobs)
                 Summary: 2 DAGs total (Failure:2)
                 """
             ),
@@ -505,10 +505,10 @@ def test_show_dag_progress_with_legend(mocker, capsys, status):
                 """
                 (No matching jobs found in Condor Q)
 
-                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME                  
-                   4      0     0    0     0     8     1   61.54 Failure sample2_hr_failure.dag   
+                UNREADY READY  PRE  IN_Q  POST  DONE  FAIL %DONE  STATE  DAGNAME
+                   4      0     0    0     0     8     1   61.54 Failure sample2_hr_failure.dag
                    0      0     0    0     0     0     0    0.0  Failure   └─sub_workflows/inner/inner.dag
-                   4      0     0    0     0     8     1   61.54         TOTALS(13 jobs)          
+                   4      0     0    0     0     8     1   61.54         TOTALS(13 jobs)
                 Summary: 2 DAGs total (Failure:2)
                 """
             ),
@@ -617,13 +617,13 @@ def condor_q_values():
             False,
             dedent(
                 """
-                STAT  IN_STATE  JOB                      
+                STAT  IN_STATE  JOB
                  Run    00:00   sample-workflow-0 (root/workflow/submit/directory)
-                 Run    00:00   ┣━job1                   
-                Idle    00:00   ┣━job2                   
-                Idle    00:00   ┗━job3                   
+                 Run    00:00   ┣━job1
+                Idle    00:00   ┣━job2
+                Idle    00:00   ┗━job3
                 Summary: 4 Condor jobs total (I:2 R:2)
-                
+
                 """
             ),
         ),
@@ -631,13 +631,13 @@ def condor_q_values():
             True,
             dedent(
                 """
-                   ID        SITE      STAT  IN_STATE  JOB                      
+                   ID        SITE      STAT  IN_STATE  JOB
                   4700       local      Run    00:00   sample-workflow-0 (root/workflow/submit/directory)
-                  4701       local      Run    00:00   ┣━job1                   
-                  4702       local     Idle    00:00   ┣━job2                   
-                  4703       local     Idle    00:00   ┗━job3                   
+                  4701       local      Run    00:00   ┣━job1
+                  4702       local     Idle    00:00   ┣━job2
+                  4703       local     Idle    00:00   ┗━job3
                 Summary: 4 Condor jobs total (I:2 R:2)
-                
+
                 """
             ),
         ),
@@ -705,13 +705,13 @@ def q_hierarchical_values():
 
 def test_show_condor_jobs_hierarchical(mocker, capsys, status, q_hierarchical_values):
     expected_output = dedent(
-        """        
+        """
 STAT: Condor job status  IN_STATE: Time job spent in current Condor status  JOB: Workflow-ID or DAG-Node ID
 
-STAT  IN_STATE  JOB                      
+STAT  IN_STATE  JOB
  Run    00:00   sample-workflow-0 (root/workflow/submit/directory)
- Run    00:00   ┗━job1                   
-Held    00:00     ┗━job2                 
+ Run    00:00   ┗━job1
+Held    00:00     ┗━job2
 ┗━A random hold reason..
 Summary: 3 Condor jobs total (R:2 H:1)
         """

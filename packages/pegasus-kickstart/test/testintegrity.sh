@@ -15,5 +15,3 @@ if ! (cat test.out | grep 'checksum_timing') >/dev/null 2>&1; then
 fi
 
 exit 0
-
-

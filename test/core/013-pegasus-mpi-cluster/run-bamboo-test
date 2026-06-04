@@ -77,4 +77,3 @@ pegasus-plan \
     --cluster label \
     --submit -v \
     dax.yml
-

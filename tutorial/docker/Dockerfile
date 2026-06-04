@@ -87,5 +87,3 @@ RUN echo -e "export PATH=/home/scitech/.pyenv/bin:\$PATH:/usr/lib64/mpich/bin" >
 
 USER root
 CMD ["/start.sh"]
-
-

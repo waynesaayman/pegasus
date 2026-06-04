@@ -34,4 +34,3 @@ Description: Workflow management system for HTCondor, Grid, and Clouds
  application is formalized as a workflow the Pegasus Workflow
  Management Service can map it onto available compute resources
  and execute the steps in appropriate order.
-

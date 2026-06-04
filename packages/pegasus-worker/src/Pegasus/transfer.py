@@ -4930,7 +4930,7 @@ def prepare_local_dir(path):
         logger.debug("Creating local directory " + path)
         try:
             os.makedirs(path, 0o0755)
-        except os.error as err:
+        except OSError as err:
             # if dir already exists, ignore the error
             if not (os.path.isdir(path)):
                 raise RuntimeError(err)

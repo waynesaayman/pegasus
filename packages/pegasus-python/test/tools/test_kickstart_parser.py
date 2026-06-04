@@ -49,7 +49,7 @@ SINGLE_KICKSTART_RECORD = """- invocation: True
   resource: "condorpool"
   wf-label: "diamond"
   wf-stamp: "2025-03-07T15:01:09-08:00"
-  interface: 
+  interface:
   hostaddr: 0.0.0.0
   pid: 32401
   uid: 3520

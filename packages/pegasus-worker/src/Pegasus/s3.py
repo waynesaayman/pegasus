@@ -28,7 +28,6 @@ import re
 import stat
 import sys
 from argparse import ArgumentParser
-
 from configparser import ConfigParser
 from urllib.parse import urlsplit
 
