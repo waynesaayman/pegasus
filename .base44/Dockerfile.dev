@@ -1,0 +1,18 @@
+# Development image for the Base44 sandbox preview.
+#
+# Plain Python runtime plus the third-party dependencies the Pegasus Python
+# packages declare. No Pegasus source is copied in: the repository is
+# bind-mounted at /pegasus and imported from there (PYTHONPATH), so source
+# edits are picked up without rebuilding this image.
+FROM python:3.12-slim
+
+# Pinned dependency set for the Python runtime, as maintained by the project in
+# src/requirements.txt (installed into the distribution by build.xml's
+# compile-externals target). PyYAML is declared by
+# packages/pegasus-python/setup.py but is not part of that file.
+COPY src/requirements.txt /tmp/pegasus-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/pegasus-requirements.txt PyYAML
+
+# Unprivileged user the service runs as. pegasus-service refuses to serve the
+# root user's data, so it must not run as root.
+RUN useradd --create-home --uid 1000 pegasus

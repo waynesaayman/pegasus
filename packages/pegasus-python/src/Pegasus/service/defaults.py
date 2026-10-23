@@ -9,6 +9,10 @@ SERVER_PORT = 5000
 CERTIFICATE = None
 PRIVATE_KEY = None
 
+# Whether the service serves HTTPS. Set to False to listen on plain HTTP, e.g.
+# when running behind a TLS terminating reverse proxy.
+SSL_ENABLED = True
+
 # Base URL prefix for Pegasus service
 # PEGASUS_SERVICE_URL_PREFIX = "/app"
 

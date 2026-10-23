@@ -1,0 +1,72 @@
+# Base44 sandbox environment for the Pegasus Workflow Dashboard
+# (pegasus-service). Development wiring only: the service runs from the
+# bind-mounted checkout, so source edits are live-reloaded.
+#
+#   docker compose -f docker-compose.base44.yml up -d --build
+#
+# The dashboard is served on http://localhost:3000/ (the preview proxy
+# terminates TLS); inside the container pegasus-service listens on port 5000.
+services:
+  # One-shot: create ~/.pegasus/workflow.db with a few demo workflows so the
+  # dashboard has something to show. Leaves an existing database untouched.
+  pegasus-seed:
+    build:
+      context: .
+      dockerfile: .base44/Dockerfile.dev
+    volumes:
+      - .:/pegasus
+      - pegasus-home:/home/pegasus
+    environment:
+      - BASE44_PREVIEW_MODE
+    working_dir: /pegasus
+    command:
+      [
+        "/pegasus/.base44/entrypoint.sh",
+        "run",
+        "python3",
+        "/pegasus/.base44/seed_demo_db.py",
+      ]
+
+  pegasus-dashboard:
+    build:
+      context: .
+      dockerfile: .base44/Dockerfile.dev
+    labels:
+      base44.project: Pegasus Dashboard
+      base44.kind: web
+      base44.port: "3000"
+    ports:
+      - "3000:5000"
+    volumes:
+      - .:/pegasus
+      - pegasus-home:/home/pegasus
+    environment:
+      # The four Pegasus packages are imported from the bind-mounted source.
+      - PYTHONPATH=/pegasus/packages/pegasus-python/src:/pegasus/packages/pegasus-common/src:/pegasus/packages/pegasus-api/src:/pegasus/packages/pegasus-worker/src
+      - BASE44_PREVIEW_MODE
+    working_dir: /pegasus
+    command:
+      [
+        "/pegasus/.base44/entrypoint.sh",
+        "run",
+        "python3",
+        "/pegasus/packages/pegasus-python/src/Pegasus/cli/pegasus-service.py",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5000",
+      ]
+    depends_on:
+      pegasus-seed:
+        condition: service_completed_successfully
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "/pegasus/.base44/entrypoint.sh", "probe"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  # The service user's home: holds ~/.pegasus (master database + config).
+  pegasus-home:

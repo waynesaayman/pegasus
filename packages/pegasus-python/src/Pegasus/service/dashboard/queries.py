@@ -140,11 +140,9 @@ class MasterDatabase:
         )
 
         state = case(
-            [
-                (ws.status == None, "Running"),  # noqa: E711
-                (ws.status == 0, "Successful"),
-                (ws.status != 0, "Failed"),
-            ],
+            (ws.status == None, "Running"),  # noqa: E711
+            (ws.status == 0, "Successful"),
+            (ws.status != 0, "Failed"),
             else_="Undefined",
         ).label("state")
 
@@ -358,11 +356,9 @@ class WorkflowInfo:
                 w.dax_label,
                 w.dax_version,
                 case(
-                    [
-                        (ws.status == None, "Running"),  # noqa: E711
-                        (ws.status == 0, "Successful"),
-                        (ws.status != 0, "Failed"),
-                    ],
+                    (ws.status == None, "Running"),  # noqa: E711
+                    (ws.status == 0, "Successful"),
+                    (ws.status != 0, "Failed"),
                     else_="Undefined",
                 ).label("state"),
                 ws.reason,
@@ -383,7 +379,9 @@ class WorkflowInfo:
             func.count(Job.wf_id).label("total"),
             func.sum(
                 case(
-                    [(Job.type_desc == "dag", 1), (Job.type_desc == "dax", 1)], else_=0
+                    (Job.type_desc == "dag", 1),
+                    (Job.type_desc == "dax", 1),
+                    else_=0,
                 )
             ).label("total_workflow"),
         ).where(Job.wf_id == self._wf_id)
@@ -401,10 +399,8 @@ class WorkflowInfo:
                         (
                             JobInstance.exitcode == 0,
                             case(
-                                [
-                                    (Job.type_desc == "dag", 1),
-                                    (Job.type_desc == "dax", 1),
-                                ],
+                                (Job.type_desc == "dag", 1),
+                                (Job.type_desc == "dax", 1),
                                 else_=0,
                             ),
                         ),
@@ -417,10 +413,8 @@ class WorkflowInfo:
                         (
                             JobInstance.exitcode != 0,
                             case(
-                                [
-                                    (Job.type_desc == "dag", 1),
-                                    (Job.type_desc == "dax", 1),
-                                ],
+                                (Job.type_desc == "dag", 1),
+                                (Job.type_desc == "dax", 1),
                                 else_=0,
                             ),
                         ),
@@ -437,10 +431,8 @@ class WorkflowInfo:
                         (
                             JobInstance.exitcode == None,  # noqa: E711
                             case(
-                                [
-                                    (Job.type_desc == "dag", 1),
-                                    (Job.type_desc == "dax", 1),
-                                ],
+                                (Job.type_desc == "dag", 1),
+                                (Job.type_desc == "dax", 1),
                                 else_=0,
                             ),
                         ),
@@ -618,7 +610,7 @@ class WorkflowInfo:
     def get_successful_jobs(self, **table_args):
 
         duration = case(
-            [(Job.clustered == 1, JobInstance.cluster_duration)],
+            (Job.clustered == 1, JobInstance.cluster_duration),
             else_=JobInstance.local_duration,
         ).label("duration")
 
@@ -691,7 +683,7 @@ class WorkflowInfo:
                 JobInstance.local_duration,
                 JobInstance.cluster_duration,
                 case(
-                    [(Job.clustered == 1, JobInstance.cluster_duration)],
+                    (Job.clustered == 1, JobInstance.cluster_duration),
                     else_=JobInstance.local_duration,
                 ).label("duration"),
             )
@@ -916,11 +908,9 @@ class WorkflowInfo:
                 w.wf_uuid,
                 w.dax_label,
                 case(
-                    [
-                        (ws.status == None, "Running"),  # noqa: E711
-                        (ws.status == 0, "Successful"),
-                        (ws.status != 0, "Failed"),
-                    ],
+                    (ws.status == None, "Running"),  # noqa: E711
+                    (ws.status == 0, "Successful"),
+                    (ws.status != 0, "Failed"),
                     else_="Undefined",
                 ).label("state"),
             )

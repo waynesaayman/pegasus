@@ -139,3 +139,40 @@ test/
 ├── scripts/   # Test scripts
 └── visualize/ # Visualization tests
 ```
+
+## Base44 Sandbox Environment (`docker-compose.base44.yml`)
+
+`docker compose -f docker-compose.base44.yml up -d --build` runs the Pegasus
+Workflow Dashboard (`pegasus-service`, the Flask app in
+`packages/pegasus-python/src/Pegasus/service/`) on <http://localhost:3000>.
+
+- The service imports the four `Pegasus` namespace packages straight from the
+  bind-mounted checkout via `PYTHONPATH`, so source edits are picked up by the
+  Flask reloader; no Pegasus code is baked into the image.
+- Dependencies are installed into the image from `src/requirements.txt` (the
+  project's pinned Python runtime set, used by `build.xml`'s
+  `compile-externals` target) plus `PyYAML`, which `packages/pegasus-python/setup.py`
+  declares but that file omits. Rebuild (`--build`) when those change.
+- `pegasus-service` refuses to serve the root user's data
+  (`service/lifecycle.py: authorization()`), so it runs as the unprivileged
+  `pegasus` user (uid 1000) created in `.base44/Dockerfile.dev`.
+  `.base44/entrypoint.sh` makes the root-owned bind mount readable by that user
+  and, when `BASE44_PREVIEW_MODE=1`, writes the single-user sandbox config to
+  `~/.pegasus/service.py` (`NoAuthentication`, `PROCESS_SWITCHING = False`,
+  `SSL_ENABLED = False`); with the flag unset the service keeps its defaults.
+- The dashboard reads workflows from the master database `~/.pegasus/workflow.db`
+  in the `pegasus-home` volume. The one-shot `pegasus-seed` service copies the
+  master database shipped in `packages/pegasus-python/test/resources/monitoring-db/`
+  (five archived hello-world workflows, `db_url` repointed at the copy) when no
+  database exists, so the dashboard has data to show without running a workflow.
+  `docker compose -f docker-compose.base44.yml down -v` resets it to empty.
+- Running real workflows to populate the dashboard normally needs a full
+  Pegasus + HTCondor installation; only the Python parts of the project run in
+  this environment. No credentials or external services are needed.
+- Verifying a change: `curl -sL http://localhost:3000/u/pegasus/` must return
+  the workflow listing; the compose healthcheck probes that URL as `pegasus`
+  (requests from uid 0 are rejected).
+- `case()` calls in `service/dashboard/queries.py` and
+  `db/workflow/stampede_statistics.py` must pass conditions as positional
+  tuples; the SQLAlchemy list form raises `ArgumentError` on the pinned
+  SQLAlchemy 2.x.

@@ -40,8 +40,10 @@ def run(host="localhost", port=5000, debug=True, verbose=logging.INFO, **kwargs)
     pkey = app.config.get("PRIVATE_KEY", None)
     if cert and pkey:
         ssl_context = (cert, pkey)
-    else:
+    elif app.config.get("SSL_ENABLED", True):
         ssl_context = "adhoc"
+    else:
+        ssl_context = None
 
     if os.getuid() != 0:
         log.warning("Service not running as root: Will not be able to switch users")
